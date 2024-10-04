@@ -12,7 +12,6 @@
 	- formulas to check the requested properties
 */
 
-
 // CONSTANTS
 // The number of trash bins.
 #define NO_BINS 1
@@ -22,7 +21,7 @@
 
 // FORMULAS
 // Insert the LTL formulas here
-//ltl door1 { ... }
+// ltl door1 { ... }ˆ
 
 // DATATYPES
 // Type for components
