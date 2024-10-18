@@ -105,7 +105,7 @@ proctype bin(byte bin_id) {
 		:: bin_status.out_door == open ->
 			bin_status.out_door = closed;
 			bin_changed!OuterDoor, true;
-			user_closed_outer_door!true;
+			user_closed_outer_door!true; // send to main control to begin trash disposal process (line ~304)
 		fi
 	:: change_bin?OuterDoor, open ->
 		if
@@ -125,9 +125,11 @@ proctype bin(byte bin_id) {
 					bin_status.trash_on_trap_door = bin_status.trash_in_outer_door;
 					bin_status.trash_in_outer_door = 0;
 				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == closed && bin_status.trash_on_trap_door > 0 ->
+					// Trash in outer door stays, as trap door still contains trash
 					skip;
 				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == open ->
 					// Trash in outer door falls through trap door
+					assert(bin_status.trash_on_trap_door == 0); // check if trap door is empty, when its open. cannot happen that its contains when it is open.
 					bin_status.trash_uncompressed = bin_status.trash_uncompressed + bin_status.trash_in_outer_door;
 					bin_status.trash_in_outer_door = 0;
 				fi
@@ -202,6 +204,8 @@ proctype bin(byte bin_id) {
 			atomic {
 				bin_status.trash_compressed = 0;
 				bin_status.trash_uncompressed = 0;
+
+				bin_status.full_capacity = false;
 			}
 			bin_emptied!true;
 		fi
@@ -237,7 +241,8 @@ proctype truck() {
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
 		empty_bin!true
-		bin_emptied?true
+		bin_emptied?true // Hold until (Bin is ack as empty)
+	
 		// communicates this with the main controller via the message "emptied"
 		change_truck!emptied, true
 	od
@@ -257,10 +262,10 @@ proctype user(byte user_id; byte trash_size) {
 		scan_card_user!user_id;
 		if
 		:: can_deposit_trash?user_id, true ->
-			bin_changed?LockOuterDoor, true;
+			bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
 			change_bin!OuterDoor, open;
-			bin_changed?OuterDoor, true;
+			bin_changed?OuterDoor, true; // Holds until (Outerdoor is ack as open)
 			atomic {
 				if
 				:: bin_status.trash_in_outer_door == 0 ->
@@ -274,7 +279,7 @@ proctype user(byte user_id; byte trash_size) {
 			}
 			// Close door
 			change_bin!OuterDoor, closed;
-			bin_changed?OuterDoor, true;
+			bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
 		:: can_deposit_trash?user_id, false ->
 			skip;
 		fi
@@ -287,38 +292,68 @@ proctype user(byte user_id; byte trash_size) {
 proctype main_control() {
 	byte bin_id=0
 	byte user_id;
-	bool valid
+	bool valid;
+	byte trash_weight;
+
 	do
 	:: scan_card_user?user_id ->
-		check_user!user_id
-		user_valid?user_id, valid
-		can_deposit_trash!user_id, valid&&!bin_status.full_capacity
+		// - Check whether the card is valid
+		// - Check whether the trash bin is full and no trash can be deposited.
+		check_user!user_id;
+		user_valid?user_id, valid;
+		can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
+		change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
 	:: user_closed_outer_door?true ->
 		// steps:
 		// the controller should interact with the trash bin such that:
-		// the trash is removed from the outer door
-		change_bin?LockOuterDoor, closed;
-		bin_changed?LockOuterDoor, true;
-		// is weighted 
-		change_bin?weigh_trash, true;
-		int weight;
-		trash_weighted?weight;
+		// 1. the trash is removed from the outer door
+		change_bin!LockOuterDoor, closed;
+		bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
+	
+		// 2. is weighted 
+		change_bin!weigh_trash, true;
+		trash_weighted?trash_weight; 
 		if
-		:: weight > 90 -> bin_status.full_capacity = true;
+		:: bin_status.full_capacity == true ->
+			// TODO: 
+			// Should something happen if trash bin is full, and the current trash is in the trap door level?
+			// Cannot deposit trash
+			skip;
+		:: else ->
+			// 3. and then falls into the main chamber.
+			change_bin!TrapDoor, open;
+			bin_changed?TrapDoor, true; // Hold until (Trapdoor is ack as open)
+
+			change_ram!compress;
+			ram_changed?true; // Hold until (Ram is ack as compressing)
+
+			if 
+			:: bin_status.trash_compressed >= max_capacity -> 
+				bin_status.full_capacity = true;
+			:: else -> 
+				skip;
+			fi
 		fi
-		// and then falls into the main chamber.
-		change_bin?TrapDoor, open 
-		bin_changed?smth, true
-		// compress 
-		change_bin?change_ram,compress
-		
-		
-		skip;
-	// TODO: truck request emptying of the trash bin if the trash bin is full. 
+
+		change_ram!idle;
+		ram_changed?true; // Hold until (Ram is ack as idle)
+
+		change_bin!TrapDoor, closed;
+		bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
+	// truck request emptying of the trash bin if the trash bin is full. 
 	:: bin_status.full_capacity ->
-		request_truck!bin_id
+		request_truck!bin_id;
+		change_truck?arrived, true; // Hold until (Truck is ack as arrived)
+
 		// While waiting for the trash truck to arrive and empty the bin, users should still be
-		// able to scan their card—and then be informed that trash deposit is not possible
+		// able to scan their card—and then be informed that trash deposit is not possible.
+		if
+		:: change_truck?arrived, true ->
+			change_truck!start_emptying, true;
+			change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
+		:: change_truck?arrived, false -> // user can still scan their card and then be informed that trash deposit is not possible.
+			skip;
+		fi
 	od
 }
 
