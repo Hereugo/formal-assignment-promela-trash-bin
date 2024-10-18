@@ -231,12 +231,15 @@ proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?bin_id ->
+		// announce its arrival with the message arrived via the channel "change_truck"
 		change_truck!arrived,true
 	:: change_truck?start_emptying, true ->
+		// empty the trash bin
+		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
 		empty_bin!true
 		bin_emptied?true
+		// communicates this with the main controller via the message "emptied"
 		change_truck!emptied, true
-		skip;
 	od
 }
 
@@ -282,6 +285,7 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
+	byte bin_id=0
 	byte user_id;
 	bool valid
 	do
@@ -311,7 +315,8 @@ proctype main_control() {
 		
 		skip;
 	// TODO: truck request emptying of the trash bin if the trash bin is full. 
-	:: false -> skip;
+	:: bin_status.full_capacity ->
+		request_truck!bin_id
 		// While waiting for the trash truck to arrive and empty the bin, users should still be
 		// able to scan their card—and then be informed that trash deposit is not possible
 	od
