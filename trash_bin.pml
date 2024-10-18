@@ -18,10 +18,9 @@
 // The number of users.
 #define NO_USERS 1
 
-
 // FORMULAS
 // Insert the LTL formulas here
-// ltl door1 { ... }ˆ
+// ltl door1 { ... }
 
 // DATATYPES
 // Type for components
@@ -255,7 +254,7 @@ proctype user(byte user_id; byte trash_size) {
 			// Open door
 			change_bin!OuterDoor, open;
 			bin_changed?OuterDoor, true;
-			atomic{
+			atomic {
 				if
 				:: bin_status.trash_in_outer_door == 0 ->
 					// Deposit trash
@@ -282,6 +281,17 @@ proctype main_control() {
 	byte user_id;
 	do
 	:: scan_card_user?user_id ->
+		// TODO: 
+		// - Check whether the card is valid
+		// - Check whether the trash bin is full and no trash can be deposited.
+		//
+		// Interact with the server via:
+		// - check_user!<user_id>, receive response from user_valid?user_id, <valid:bool>
+		// reply using channel "can_deposit_trash?user_id, <status:bool>
+		skip;
+	// TODO:
+	:: user_closed_outer_door?true ->
+		// - handle stuff
 		skip;
 	od
 }
