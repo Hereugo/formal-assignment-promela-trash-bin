@@ -291,8 +291,14 @@ proctype main_control() {
 		skip;
 	// TODO:
 	:: user_closed_outer_door?true ->
-		// - handle stuff
+		// steps:
+		// the controller should interact with the trash bin such that the trash is removed
+		// from the outer door, is weighted and then falls into the main chamber.
 		skip;
+	// TODO: truck request emptying of the trash bin if the trash bin is full. 
+	:: false -> skip;
+		// While waiting for the trash truck to arrive and empty the bin, users should still be
+		// able to scan their card—and then be informed that trash deposit is not possible
 	od
 }
 
