@@ -118,14 +118,13 @@ proctype bin(byte bin_id) {
 		:: bin_status.lock_out_door == open && bin_status.out_door == closed ->
 			atomic {
 				bin_status.lock_out_door = closed;
-				// Check if trash now falls trough
+				// Check if trash now falls through
 				if
 				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == closed && bin_status.trash_on_trap_door == 0 ->
 					// Trash in outer door falls on trap door
 					bin_status.trash_on_trap_door = bin_status.trash_in_outer_door;
 					bin_status.trash_in_outer_door = 0;
 				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == closed && bin_status.trash_on_trap_door > 0 ->
-					// Trash cannot fall through because there is already trash
 					skip;
 				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == open ->
 					// Trash in outer door falls through trap door
@@ -292,8 +291,24 @@ proctype main_control() {
 		can_deposit_trash!user_id, valid&&!bin_status.full_capacity
 	:: user_closed_outer_door?true ->
 		// steps:
-		// the controller should interact with the trash bin such that the trash is removed
-		// from the outer door, is weighted and then falls into the main chamber.
+		// the controller should interact with the trash bin such that:
+		// the trash is removed from the outer door
+		change_bin?LockOuterDoor, closed;
+		bin_changed?LockOuterDoor, true;
+		// is weighted 
+		change_bin?weigh_trash, true;
+		int weight;
+		trash_weighted?weight;
+		if
+		:: weight > 90 -> bin_status.full_capacity = true;
+		fi
+		// and then falls into the main chamber.
+		change_bin?TrapDoor, open 
+		bin_changed?smth, true
+		// compress 
+		change_bin?change_ram,compress
+		
+		
 		skip;
 	// TODO: truck request emptying of the trash bin if the trash bin is full. 
 	:: false -> skip;
