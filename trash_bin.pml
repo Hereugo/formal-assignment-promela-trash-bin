@@ -288,17 +288,12 @@ proctype user(byte user_id; byte trash_size) {
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
 	byte user_id;
+	bool valid
 	do
 	:: scan_card_user?user_id ->
-		// TODO: 
-		// - Check whether the card is valid
-		// - Check whether the trash bin is full and no trash can be deposited.
-		//
-		// Interact with the server via:
-		// - check_user!<user_id>, receive response from user_valid?user_id, <valid:bool>
-		// reply using channel "can_deposit_trash?user_id, <status:bool>
-		skip;
-	// TODO:
+		check_user!user_id
+		user_valid?user_id, valid
+		can_deposit_trash!user_id, valid&&!bin_status.full_capacity
 	:: user_closed_outer_door?true ->
 		// steps:
 		// the controller should interact with the trash bin such that the trash is removed
