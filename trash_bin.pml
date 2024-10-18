@@ -286,6 +286,7 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
+	byte bin_id=0
 	byte user_id;
 	bool valid
 	do
@@ -299,7 +300,8 @@ proctype main_control() {
 		// from the outer door, is weighted and then falls into the main chamber.
 		skip;
 	// TODO: truck request emptying of the trash bin if the trash bin is full. 
-	:: false -> skip;
+	:: bin_status.full_capacity ->
+		request_truck!bin_id
 		// While waiting for the trash truck to arrive and empty the bin, users should still be
 		// able to scan their card—and then be informed that trash deposit is not possible
 	od
