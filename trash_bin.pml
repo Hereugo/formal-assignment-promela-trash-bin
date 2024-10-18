@@ -232,6 +232,15 @@ proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?bin_id ->
+		// TODO:
+		// - announce its arrival with the message arrived via the channel "change_truck"
+		// - 
+		skip;
+	:: change_truck?start_emptying, true ->
+		// TODO:
+		// - empty the trash bin
+		// - communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
+		// - communicates this with the main controller via the message "emptied"
 		skip;
 	od
 }
