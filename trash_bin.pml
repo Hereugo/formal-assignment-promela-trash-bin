@@ -20,7 +20,8 @@
 
 // FORMULAS
 // Insert the LTL formulas here
-// ltl door1 { ... }
+// ltl door1 { ¬(bin_t.out_door == open && bin_t.trash_in_outer_door > 0) }
+
 
 // DATATYPES
 // Type for components
@@ -104,8 +105,8 @@ proctype bin(byte bin_id) {
 		if
 		:: bin_status.out_door == open ->
 			bin_status.out_door = closed;
-			bin_changed!OuterDoor, true;
 			user_closed_outer_door!true; // send to main control to begin trash disposal process (line ~304)
+			bin_changed!OuterDoor, true;
 		fi
 	:: change_bin?OuterDoor, open ->
 		if
@@ -302,7 +303,12 @@ proctype main_control() {
 		check_user!user_id;
 		user_valid?user_id, valid;
 		can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
-		change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
+		if 
+		:: bin_status.full_capacity != true ->
+			change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
+		:: else ->
+			skip;
+		fi
 	:: user_closed_outer_door?true ->
 		// steps:
 		// the controller should interact with the trash bin such that:
@@ -311,7 +317,7 @@ proctype main_control() {
 		bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
 	
 		// 2. is weighted 
-		change_bin!weigh_trash, true;
+		weigh_trash!true;
 		trash_weighted?trash_weight; 
 		if
 		:: bin_status.full_capacity == true ->
@@ -343,7 +349,7 @@ proctype main_control() {
 	// truck request emptying of the trash bin if the trash bin is full. 
 	:: bin_status.full_capacity ->
 		request_truck!bin_id;
-		change_truck?arrived, true; // Hold until (Truck is ack as arrived)
+		// change_truck?arrived, true; // Hold until (Truck is ack as arrived)
 
 		// While waiting for the trash truck to arrive and empty the bin, users should still be
 		// able to scan their card—and then be informed that trash deposit is not possible.
