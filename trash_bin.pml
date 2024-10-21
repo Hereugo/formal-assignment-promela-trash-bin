@@ -16,7 +16,7 @@
 // The number of trash bins.
 #define NO_BINS 1
 // The number of users.
-#define NO_USERS 1
+#define NO_USERS 3
 
 // FORMULAS
 // Insert the LTL formulas here
@@ -59,9 +59,14 @@ bin_t bin_status;
 // Maximal capacity of trash bin
 byte max_capacity;
 
-// User information
-bool has_trash;
-
+// User Information
+typedef user_t {
+	byte user_id;
+	byte trash_size;
+	bool has_trash;
+	bool valid;
+}
+user_t users[NO_USERS];
 
 // CHANNELS
 // Asynchronous channel to give command to doors and lock
@@ -220,13 +225,7 @@ proctype server() {
 	do
 	// Check validity of card
 	:: check_user?user_id ->
-		if
-		// Do not accept cards from user with id 42
-		:: user_id != 42 ->
-			user_valid!user_id, true;
-		:: user_id == 42 ->
-			user_valid!user_id, false;
-		fi
+		user_valid!user_id, users[user_id].valid;
 	od
 }
 
@@ -252,13 +251,13 @@ proctype truck() {
 
 // User process type.
 // The user tries to deposit trash.
-proctype user(byte user_id; byte trash_size) {
+proctype user(byte user_id) {
 	do
 	// Get another bag of trash
-	:: !has_trash ->
-		has_trash = true;
+	:: !users[user_id].has_trash ->
+		users[user_id].has_trash = true;
 	// Try to deposit trash
-	:: has_trash ->
+	:: users[user_id].has_trash ->
 		// Scan card
 		scan_card_user!user_id;
 		if
@@ -271,8 +270,8 @@ proctype user(byte user_id; byte trash_size) {
 				if
 				:: bin_status.trash_in_outer_door == 0 ->
 					// Deposit trash
-					bin_status.trash_in_outer_door = trash_size;
-					has_trash = false;
+					bin_status.trash_in_outer_door = users[user_id].trash_size;
+					users[user_id].has_trash = false;
 				:: bin_status.trash_in_outer_door > 0 ->
 					// Cannot deposit trash
 					skip;
@@ -291,24 +290,28 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
-	byte bin_id=0
+	byte bin_id = 0;
 	byte user_id;
-	bool valid;
 	byte trash_weight;
 
 	do
 	:: scan_card_user?user_id ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
-		check_user!user_id;
-		user_valid?user_id, valid;
-		can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
-		if 
-		:: bin_status.full_capacity != true ->
-			change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
-		:: else ->
-			skip;
-		fi
+		
+		// UPD: Added "atomic" as multiple users cannot simultanously scan_cards
+		atomic {
+			bool valid;
+			check_user!user_id;
+			user_valid?user_id, valid;
+			can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
+			if 
+			:: bin_status.full_capacity != true ->
+				change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
+			:: else ->
+				skip;
+			fi
+		}
 	:: user_closed_outer_door?true ->
 		// steps:
 		// the controller should interact with the trash bin such that:
@@ -392,11 +395,19 @@ init {
 			break;
 		od;
 
-		// Start the user process
+		// Start user processes
 		proc = 0;
-		byte trash_size = 2;
-		has_trash = true;
-		run user(proc, trash_size);
+		do
+		:: proc < NO_USERS ->			
+			users[proc].user_id = proc;
+			users[proc].valid = true;
+			users[proc].has_trash = true;
+			users[proc].trash_size = 2;
+			run user(proc);
+			proc++;
+		:: proc == NO_USERS ->
+			break;
+		od;
 
 		// Start the server process
 		run server();
