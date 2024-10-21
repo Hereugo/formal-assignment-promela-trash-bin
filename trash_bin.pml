@@ -46,8 +46,8 @@ typedef bin_t {
 	// Current level of trash
 	byte trash_compressed;
 	byte trash_uncompressed;
-	// Exceptional behavior
 	bool full_capacity;
+	// Exceptional behavior
 	bool trap_destroyed;
 
 	// CHANNELS
@@ -55,8 +55,6 @@ typedef bin_t {
 	chan change_bin = [1] of { mtype:comp, mtype:pos };
 	// Synchronous channel to acknowledge change in bin
 	chan bin_changed = [0] of { mtype:comp, bool };
-	// Synchronous channel to indicate that user closed the door
-	chan user_closed_outer_door = [0] of { bool };
 
 	// Synchronous channels to communicate with weight sensors in trap doors
 	chan weigh_trash = [0] of { bool };
@@ -86,14 +84,17 @@ typedef user_t {
 	bool has_trash;
 	bool valid;
 
-	
 }
 user_t users[NO_USERS];
 
 // CHANNELS
+
+// Asynchronous channel to indicate that user closed the door of bin.
+chan user_closed_outer_door = [NO_BINS] of { byte };
+
 // Asynchronous channel to communicate with the user
 chan scan_card_user = [NO_USERS] of { byte };
-chan can_deposit_trash = [NO_USERS] of { byte, bool };
+chan can_deposit_trash = [NO_USERS] of { byte, bool, byte };
 
 // Synchronous channel to communicate with server
 chan check_user = [0] of { byte };
@@ -102,7 +103,6 @@ chan user_valid = [0] of { byte, bool };
 // Asynchronous channel to communicate with trash truck
 chan request_truck = [NO_BINS] of { byte };
 chan change_truck = [1] of { mtype:truck_pos, byte };
-
 
 
 // PROCESSES
@@ -115,7 +115,7 @@ proctype bin(byte bin_id) {
 		if
 		:: bins[bin_id].out_door == open ->
 			bins[bin_id].out_door = closed;
-			bins[bin_id].user_closed_outer_door!true; // send to main control to begin trash disposal process (line ~304)
+			user_closed_outer_door!bin_id; // send to main control to begin trash disposal process
 			bins[bin_id].bin_changed!OuterDoor, true;
 		fi
 	:: bins[bin_id].change_bin?OuterDoor, open ->
@@ -245,24 +245,29 @@ proctype truck() {
 		// announce its arrival with the message arrived via the channel "change_truck"
 		change_truck!arrived, true
 	:: change_truck?start_emptying, true ->
+		// technically the channel request_truck always contains at least one trash bin
+		// since main_control called start_emptying.
+		// https://spinroot.com/spin/Man/nempty.html
+		assert(nempty(request_truck));
+
+		// removes latest element from the channel and assigns to bin_id
+		// https://spinroot.com/spin/Man/receive.html
+		request_truck?<bin_id>;
+
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
-		bins[bin_id].empty_bin!true
-		bins[bin_id].bin_emptied?true // Hold until (Bin is ack as empty)
+		bins[bin_id].empty_bin!true;
+		bins[bin_id].bin_emptied?true; // Hold until (Bin is ack as empty)
 	
 		// communicates this with the main controller via the message "emptied"
-		change_truck!emptied, true
+		change_truck!emptied, true;
 	od
 }
 
 
 // User process type.
-// The user tries to deposit trash.
-// TODO:
-// - !! This must be implemented after TODO in main_control is complete.
-// - determine bin_id that the user is interacting.
 proctype user(byte user_id) {
-	byte bin_id = 0;
+	byte bin_id;
 	do
 	// Get another bag of trash
 	:: !users[user_id].has_trash ->
@@ -272,7 +277,9 @@ proctype user(byte user_id) {
 		// Scan card
 		scan_card_user!user_id;
 		if
-		:: can_deposit_trash?user_id, true ->
+		// extended the messages delivered via the channel 
+		// can_deposit_trash to indicate the bin_id where users should deposit the trash.
+		:: can_deposit_trash?<user_id, true, bin_id> ->
 			bins[bin_id].bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
 			bins[bin_id].change_bin!OuterDoor, open;
@@ -291,7 +298,7 @@ proctype user(byte user_id) {
 			// Close door
 			bins[bin_id].change_bin!OuterDoor, closed;
 			bins[bin_id].bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
-		:: can_deposit_trash?user_id, false ->
+		:: can_deposit_trash?<user_id, false, bin_id> ->
 			skip;
 		fi
 	od
@@ -301,37 +308,55 @@ proctype user(byte user_id) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 
-// TODO:
-// Users do not care in which trash bin they deposit their trash. After scanning their card, the main_control can assign an available trash bin to the
-// user. To this end, you can extend the messages delivered via the channel
-// can_deposit_trash to indicate the bin_id where users should deposit the trash.
 proctype main_control() {
-	byte bin_id = 0;
+	byte bin_id;
 	byte user_id;
 	byte trash_weight;
 
 	do
-	:: scan_card_user?user_id ->
+	// removes latest element from the channel and assigns to user_id
+	// https://spinroot.com/spin/Man/receive.html 
+	:: scan_card_user?<user_id> ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
+		
 		bool valid;
 		check_user!user_id;
 		user_valid?user_id, valid;
-		can_deposit_trash!user_id, (valid && !bins[bin_id].full_capacity);
-		if 
-		:: bins[bin_id].full_capacity != true ->
-			bins[bin_id].change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
-		:: else ->
-			skip;
+		// Users do not care in which trash bin they deposit their trash. 
+		// After scanning their card, the main_control can assign an available trash bin to the user.
+		if
+		:: valid == true ->
+			// Find an available bin and assign it to bin_id
+			bin_id = 0;
+			bool found_available_bin = false;
+			do
+			:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed -> 
+				found_available_bin	= true;
+				break;
+			:: (bin_id < NO_BINS) -> bin_id++;
+			:: (bin_id >= NO_BINS) -> break;
+			od
+			if
+			:: found_available_bin == true ->
+				can_deposit_trash!user_id, true, bin_id;
+				bins[bin_id].change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it
+			:: else -> 
+				can_deposit_trash!user_id, false, 0; // No trash bin found, therefore cannot deposit trash
+			fi
+		:: else -> 
+			can_deposit_trash!user_id, false, 0; // user is not valid, therefore cannot deposit trash
 		fi
-	:: bins[bin_id].user_closed_outer_door?true ->
+	// removes latest element from the channel and assigns to bin_id
+	// https://spinroot.com/spin/Man/receive.html
+	:: user_closed_outer_door?<bin_id> ->
 		// steps:
 		// the controller should interact with the trash bin such that:
 		// 1. the trash is removed from the outer door
 		bins[bin_id].change_bin!LockOuterDoor, closed;
 		bins[bin_id].bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
 	
-		// 2. is weighted 
+		// 2. is weighted
 		bins[bin_id].weigh_trash!true;
 		bins[bin_id].trash_weighted?trash_weight; 
 		if
@@ -351,6 +376,7 @@ proctype main_control() {
 			if 
 			:: bins[bin_id].trash_compressed >= max_capacity -> 
 				bins[bin_id].full_capacity = true;
+				request_truck!bin_id;
 			:: else -> 
 				skip;
 			fi
@@ -361,20 +387,11 @@ proctype main_control() {
 
 		bins[bin_id].change_bin!TrapDoor, closed;
 		bins[bin_id].bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
-	// truck request emptying of the trash bin if the trash bin is full. 
-	:: bins[bin_id].full_capacity ->
-		request_truck!bin_id;
-		// change_truck?arrived, true; // Hold until (Truck is ack as arrived)
-
-		// While waiting for the trash truck to arrive and empty the bin, users should still be
-		// able to scan their card—and then be informed that trash deposit is not possible.
-		if
-		:: change_truck?arrived, true ->
-			change_truck!start_emptying, true;
-			change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
-		:: change_truck?arrived, false -> // user can still scan their card and then be informed that trash deposit is not possible.
-			skip;
-		fi
+	// While waiting for the trash truck to arrive and empty the bin, users should still be
+	// able to scan their card—and then be informed that trash deposit is not possible.
+	:: change_truck?arrived, true ->
+		change_truck!start_emptying, true;
+		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
 	od
 }
 
