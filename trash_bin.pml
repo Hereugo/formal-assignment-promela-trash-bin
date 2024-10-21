@@ -239,13 +239,16 @@ proctype truck() {
 		// announce its arrival with the message arrived via the channel "change_truck"
 		change_truck!arrived,true
 	:: change_truck?start_emptying, true ->
+		assert(nempty(request_truck))
+		request_truck?<bin_id>;
+
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
-		empty_bin!true
-		bin_emptied?true // Hold until (Bin is ack as empty)
+		empty_bin!true;
+		bin_emptied?true; // Hold until (Bin is ack as empty)
 	
 		// communicates this with the main controller via the message "emptied"
-		change_truck!emptied, true
+		change_truck!emptied, true;
 	od
 }
 
@@ -262,7 +265,7 @@ proctype user(byte user_id; byte trash_size) {
 		// Scan card
 		scan_card_user!user_id;
 		if
-		:: can_deposit_trash?user_id, true ->
+		:: can_deposit_trash?<user_id, true> ->
 			bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
 			change_bin!OuterDoor, open;
@@ -281,7 +284,7 @@ proctype user(byte user_id; byte trash_size) {
 			// Close door
 			change_bin!OuterDoor, closed;
 			bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
-		:: can_deposit_trash?user_id, false ->
+		:: can_deposit_trash?<user_id, false> ->
 			skip;
 		fi
 	od
@@ -291,23 +294,28 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
-	byte bin_id=0
+	byte bin_id;
 	byte user_id;
-	bool valid;
 	byte trash_weight;
 
 	do
-	:: scan_card_user?user_id ->
+	:: scan_card_user?<user_id> ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
+		bool valid;
 		check_user!user_id;
 		user_valid?user_id, valid;
-		can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
 		if 
-		:: bin_status.full_capacity != true ->
-			change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
+		:: valid == true ->
+			if
+			:: (!bin_status.full_capacity && !bin_status.trap_destroyed) ->
+				can_deposit_trash!user_id, true;
+				change_bin!LockOuterDoor, open;
+			:: else -> 
+				can_deposit_trash!user_id, false;
+			fi
 		:: else ->
-			skip;
+			can_deposit_trash!user_id, false;
 		fi
 	:: user_closed_outer_door?true ->
 		// steps:
@@ -336,6 +344,7 @@ proctype main_control() {
 			if 
 			:: bin_status.trash_compressed >= max_capacity -> 
 				bin_status.full_capacity = true;
+				request_truck!bin_id;
 			:: else -> 
 				skip;
 			fi
@@ -346,20 +355,11 @@ proctype main_control() {
 
 		change_bin!TrapDoor, closed;
 		bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
-	// truck request emptying of the trash bin if the trash bin is full. 
-	:: bin_status.full_capacity ->
-		request_truck!bin_id;
-		// change_truck?arrived, true; // Hold until (Truck is ack as arrived)
-
-		// While waiting for the trash truck to arrive and empty the bin, users should still be
-		// able to scan their card—and then be informed that trash deposit is not possible.
-		if
-		:: change_truck?arrived, true ->
-			change_truck!start_emptying, true;
-			change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
-		:: change_truck?arrived, false -> // user can still scan their card and then be informed that trash deposit is not possible.
-			skip;
-		fi
+	// While waiting for the trash truck to arrive and empty the bin, users should still be
+	// able to scan their card—and then be informed that trash deposit is not possible.
+	:: change_truck?arrived, true ->
+		change_truck!start_emptying, true;
+		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
 	od
 }
 

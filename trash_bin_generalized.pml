@@ -236,8 +236,6 @@ proctype server() {
 
 // Trash truck process type.
 // Remodel it to control the trash truck and handle requests by the controller!
-// TODO:
-// when we are emptying the trash we are unable to determine which bin it is. (Figure out how to find bin_id)
 proctype truck() {
 	byte bin_id;
 	do
