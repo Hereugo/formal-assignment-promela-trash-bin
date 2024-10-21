@@ -14,9 +14,9 @@
 
 // CONSTANTS
 // The number of trash bins.
-#define NO_BINS 3
+#define NO_BINS 1
 // The number of users.
-#define NO_USERS 3
+#define NO_USERS 1
 
 // FORMULAS
 // Insert the LTL formulas here
@@ -46,55 +46,42 @@ typedef bin_t {
 	// Current level of trash
 	byte trash_compressed;
 	byte trash_uncompressed;
-	bool full_capacity;
 	// Exceptional behavior
+	bool full_capacity;
 	bool trap_destroyed;
-
-	// CHANNELS
-	// Asynchronous channel to give command to doors and lock
-	chan change_bin = [1] of { mtype:comp, mtype:pos };
-	// Synchronous channel to acknowledge change in bin
-	chan bin_changed = [0] of { mtype:comp, bool };
-
-	// Synchronous channels to communicate with weight sensors in trap doors
-	chan weigh_trash = [0] of { bool };
-	chan trash_weighted = [0] of { byte };
-
-	// Synchronous channel to communicate with ram
-	chan change_ram = [0] of { mtype:ram_pos };
-	chan ram_changed = [0] of { bool };
-
-	// Synchronous channel for communication between trash truck and trash bin
-	chan empty_bin = [0] of { bool };
-	chan bin_emptied = [0] of { bool };
 }
 
 
 // VARIABLES
 // Status of trash bin
-bin_t bins[NO_BINS];
+bin_t bin_status;
 
 // Maximal capacity of trash bin
 byte max_capacity;
 
-// User Information
-typedef user_t {
-	byte user_id;
-	byte trash_size;
-	bool has_trash;
-	bool valid;
+// User information
+bool has_trash;
 
-}
-user_t users[NO_USERS];
 
 // CHANNELS
+// Asynchronous channel to give command to doors and lock
+chan change_bin = [1] of { mtype:comp, mtype:pos };
+// Synchronous channel to acknowledge change in bin
+chan bin_changed = [0] of { mtype:comp, bool };
+// Synchronous channel to indicate that user closed the door
+chan user_closed_outer_door = [0] of { bool };
 
-// Asynchronous channel to indicate that user closed the door of bin.
-chan user_closed_outer_door = [NO_BINS] of { byte };
+// Synchronous channels to communicate with weight sensors in trap doors
+chan weigh_trash = [0] of { bool };
+chan trash_weighted = [0] of { byte };
+
+// Synchronous channel to communicate with ram
+chan change_ram = [0] of { mtype:ram_pos };
+chan ram_changed = [0] of { bool };
 
 // Asynchronous channel to communicate with the user
 chan scan_card_user = [NO_USERS] of { byte };
-chan can_deposit_trash = [NO_USERS] of { byte, bool, byte };
+chan can_deposit_trash = [NO_USERS] of { byte, bool };
 
 // Synchronous channel to communicate with server
 chan check_user = [0] of { byte };
@@ -103,6 +90,9 @@ chan user_valid = [0] of { byte, bool };
 // Asynchronous channel to communicate with trash truck
 chan request_truck = [NO_BINS] of { byte };
 chan change_truck = [1] of { mtype:truck_pos, byte };
+// Synchronous channel for communication between trash truck and trash bin
+chan empty_bin = [0] of { bool };
+chan bin_emptied = [0] of { bool };
 
 
 // PROCESSES
@@ -111,114 +101,114 @@ chan change_truck = [1] of { mtype:truck_pos, byte };
 proctype bin(byte bin_id) {
 	do
 	// Outer door
-	:: bins[bin_id].change_bin?OuterDoor, closed ->
+	:: change_bin?OuterDoor, closed ->
 		if
-		:: bins[bin_id].out_door == open ->
-			bins[bin_id].out_door = closed;
-			user_closed_outer_door!bin_id; // send to main control to begin trash disposal process
-			bins[bin_id].bin_changed!OuterDoor, true;
+		:: bin_status.out_door == open ->
+			bin_status.out_door = closed;
+			user_closed_outer_door!true; // send to main control to begin trash disposal process (line ~304)
+			bin_changed!OuterDoor, true;
 		fi
-	:: bins[bin_id].change_bin?OuterDoor, open ->
+	:: change_bin?OuterDoor, open ->
 		if
-		:: bins[bin_id].out_door == closed && bins[bin_id].lock_out_door == open ->
-			bins[bin_id].out_door = open;
-			bins[bin_id].bin_changed!OuterDoor, true;
+		:: bin_status.out_door == closed && bin_status.lock_out_door == open ->
+			bin_status.out_door = open;
+			bin_changed!OuterDoor, true;
 		fi
-	:: bins[bin_id].change_bin?LockOuterDoor, closed ->
+	:: change_bin?LockOuterDoor, closed ->
 		if
-		:: bins[bin_id].lock_out_door == open && bins[bin_id].out_door == closed ->
+		:: bin_status.lock_out_door == open && bin_status.out_door == closed ->
 			atomic {
-				bins[bin_id].lock_out_door = closed;
+				bin_status.lock_out_door = closed;
 				// Check if trash now falls through
 				if
-				:: bins[bin_id].trash_in_outer_door > 0 && bins[bin_id].trap_door == closed && bins[bin_id].trash_on_trap_door == 0 ->
+				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == closed && bin_status.trash_on_trap_door == 0 ->
 					// Trash in outer door falls on trap door
-					bins[bin_id].trash_on_trap_door = bins[bin_id].trash_in_outer_door;
-					bins[bin_id].trash_in_outer_door = 0;
-				:: bins[bin_id].trash_in_outer_door > 0 && bins[bin_id].trap_door == closed && bins[bin_id].trash_on_trap_door > 0 ->
+					bin_status.trash_on_trap_door = bin_status.trash_in_outer_door;
+					bin_status.trash_in_outer_door = 0;
+				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == closed && bin_status.trash_on_trap_door > 0 ->
 					// Trash in outer door stays, as trap door still contains trash
 					skip;
-				:: bins[bin_id].trash_in_outer_door > 0 && bins[bin_id].trap_door == open ->
+				:: bin_status.trash_in_outer_door > 0 && bin_status.trap_door == open ->
 					// Trash in outer door falls through trap door
-					assert(bins[bin_id].trash_on_trap_door == 0); // check if trap door is empty, when its open. cannot happen that its contains when it is open.
-					bins[bin_id].trash_uncompressed = bins[bin_id].trash_uncompressed + bins[bin_id].trash_in_outer_door;
-					bins[bin_id].trash_in_outer_door = 0;
+					assert(bin_status.trash_on_trap_door == 0); // check if trap door is empty, when its open. cannot happen that its contains when it is open.
+					bin_status.trash_uncompressed = bin_status.trash_uncompressed + bin_status.trash_in_outer_door;
+					bin_status.trash_in_outer_door = 0;
 				fi
 			}
-			bins[bin_id].bin_changed!LockOuterDoor, true;
+			bin_changed!LockOuterDoor, true;
 		fi
-	:: bins[bin_id].change_bin?LockOuterDoor, open ->
+	:: change_bin?LockOuterDoor, open ->
 		if
-		:: bins[bin_id].lock_out_door == closed && bins[bin_id].out_door == closed ->
-			bins[bin_id].lock_out_door = open;
-			bins[bin_id].bin_changed!LockOuterDoor, true;
+		:: bin_status.lock_out_door == closed && bin_status.out_door == closed ->
+			bin_status.lock_out_door = open;
+			bin_changed!LockOuterDoor, true;
 		fi
 	// Trap door
-	:: bins[bin_id].weigh_trash?true ->
+	:: weigh_trash?true ->
 		if
-		:: bins[bin_id].trap_door == closed ->
-			bins[bin_id].trash_weighted!bins[bin_id].trash_on_trap_door;
+		:: bin_status.trap_door == closed ->
+			trash_weighted!bin_status.trash_on_trap_door;
 		fi
-	:: bins[bin_id].change_bin?TrapDoor, closed ->
+	:: change_bin?TrapDoor, closed ->
 		if
-		:: bins[bin_id].trap_door == open && bins[bin_id].ram == idle ->
-			bins[bin_id].trap_door = closed;
-			bins[bin_id].bin_changed!TrapDoor, true;
-		:: bins[bin_id].trap_door == open && bins[bin_id].ram == compress ->
-			bins[bin_id].trap_destroyed = true;
-			bins[bin_id].bin_changed!TrapDoor, false;
+		:: bin_status.trap_door == open && bin_status.ram == idle ->
+			bin_status.trap_door = closed;
+			bin_changed!TrapDoor, true;
+		:: bin_status.trap_door == open && bin_status.ram == compress ->
+			bin_status.trap_destroyed = true;
+			bin_changed!TrapDoor, false;
 		fi
-	:: bins[bin_id].change_bin?TrapDoor, open ->
+	:: change_bin?TrapDoor, open ->
 		if
-		:: bins[bin_id].trap_door == closed ->
+		:: bin_status.trap_door == closed ->
 			atomic {
-				bins[bin_id].trap_door = open;
+				bin_status.trap_door = open;
 				// Trash on trap door falls through
 				if
-				:: bins[bin_id].trash_on_trap_door > 0 ->
-					bins[bin_id].trash_uncompressed = bins[bin_id].trash_uncompressed + bins[bin_id].trash_on_trap_door;
-					bins[bin_id].trash_on_trap_door = 0;
+				:: bin_status.trash_on_trap_door > 0 ->
+					bin_status.trash_uncompressed = bin_status.trash_uncompressed + bin_status.trash_on_trap_door;
+					bin_status.trash_on_trap_door = 0;
 				:: else ->
 					skip;
 				fi
 			}
-			bins[bin_id].bin_changed!TrapDoor, true;
+			bin_changed!TrapDoor, true;
 		fi
 	// Vertical ram
-	:: bins[bin_id].change_ram?compress ->
+	:: change_ram?compress ->
 		if
-		:: bins[bin_id].ram == idle ->
+		:: bin_status.ram == idle ->
 			atomic {
-				bins[bin_id].ram = compress;
+				bin_status.ram = compress;
 				if
-				:: bins[bin_id].trap_door == open ->
+				:: bin_status.trap_door == open ->
 					// Compress trash
-					bins[bin_id].trash_compressed = bins[bin_id].trash_compressed + bins[bin_id].trash_uncompressed / 2;
-					bins[bin_id].trash_uncompressed = 0;
-				:: bins[bin_id].trap_door == closed ->
+					bin_status.trash_compressed = bin_status.trash_compressed + bin_status.trash_uncompressed / 2;
+					bin_status.trash_uncompressed = 0;
+				:: bin_status.trap_door == closed ->
 					// Trap doors are destroyed
-					bins[bin_id].trap_destroyed = true;
+					bin_status.trap_destroyed = true;
 				fi
 			}
-			bins[bin_id].ram_changed!true;
+			ram_changed!true;
 		fi
-	:: bins[bin_id].change_ram?idle ->
+	:: change_ram?idle ->
 		if
-		:: bins[bin_id].ram == compress ->
-			bins[bin_id].ram = idle;
-			bins[bin_id].ram_changed!true;
+		:: bin_status.ram == compress ->
+			bin_status.ram = idle;
+			ram_changed!true;
 		fi
 	// Emptying through trash truck
-	:: bins[bin_id].empty_bin?true ->
+	:: empty_bin?true ->
 		if
-		:: bins[bin_id].out_door == closed && bins[bin_id].lock_out_door == closed && bins[bin_id].ram == idle ->
+		:: bin_status.out_door == closed && bin_status.lock_out_door == closed && bin_status.ram == idle ->
 			atomic {
-				bins[bin_id].trash_compressed = 0;
-				bins[bin_id].trash_uncompressed = 0;
+				bin_status.trash_compressed = 0;
+				bin_status.trash_uncompressed = 0;
 
-				bins[bin_id].full_capacity = false;
+				bin_status.full_capacity = false;
 			}
-			bins[bin_id].bin_emptied!true;
+			bin_emptied!true;
 		fi
 	od
 }
@@ -230,75 +220,68 @@ proctype server() {
 	do
 	// Check validity of card
 	:: check_user?user_id ->
-		user_valid!user_id, users[user_id].valid;
+		if
+		// Do not accept cards from user with id 42
+		:: user_id != 42 ->
+			user_valid!user_id, true;
+		:: user_id == 42 ->
+			user_valid!user_id, false;
+		fi
 	od
 }
 
 // Trash truck process type.
 // Remodel it to control the trash truck and handle requests by the controller!
-// TODO:
-// when we are emptying the trash we are unable to determine which bin it is. (Figure out how to find bin_id)
 proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?bin_id ->
 		// announce its arrival with the message arrived via the channel "change_truck"
-		change_truck!arrived, true
+		change_truck!arrived,true
 	:: change_truck?start_emptying, true ->
-		// technically the channel request_truck always contains at least one trash bin
-		// since main_control called start_emptying.
-		// https://spinroot.com/spin/Man/nempty.html
-		assert(nempty(request_truck));
-
-		// removes latest element from the channel and assigns to bin_id
-		// https://spinroot.com/spin/Man/receive.html
-		request_truck?<bin_id>;
-
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
-		bins[bin_id].empty_bin!true;
-		bins[bin_id].bin_emptied?true; // Hold until (Bin is ack as empty)
+		empty_bin!true
+		bin_emptied?true // Hold until (Bin is ack as empty)
 	
 		// communicates this with the main controller via the message "emptied"
-		change_truck!emptied, true;
+		change_truck!emptied, true
 	od
 }
 
 
 // User process type.
-proctype user(byte user_id) {
-	byte bin_id;
+// The user tries to deposit trash.
+proctype user(byte user_id; byte trash_size) {
 	do
 	// Get another bag of trash
-	:: !users[user_id].has_trash ->
-		users[user_id].has_trash = true;
+	:: !has_trash ->
+		has_trash = true;
 	// Try to deposit trash
-	:: users[user_id].has_trash ->
+	:: has_trash ->
 		// Scan card
 		scan_card_user!user_id;
 		if
-		// extended the messages delivered via the channel 
-		// can_deposit_trash to indicate the bin_id where users should deposit the trash.
-		:: can_deposit_trash?<user_id, true, bin_id> ->
-			bins[bin_id].bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
+		:: can_deposit_trash?user_id, true ->
+			bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
-			bins[bin_id].change_bin!OuterDoor, open;
-			bins[bin_id].bin_changed?OuterDoor, true; // Holds until (Outerdoor is ack as open)
+			change_bin!OuterDoor, open;
+			bin_changed?OuterDoor, true; // Holds until (Outerdoor is ack as open)
 			atomic {
 				if
-				:: bins[bin_id].trash_in_outer_door == 0 ->
+				:: bin_status.trash_in_outer_door == 0 ->
 					// Deposit trash
-					bins[bin_id].trash_in_outer_door = users[user_id].trash_size;
-					users[user_id].has_trash = false;
-				:: bins[bin_id].trash_in_outer_door > 0 ->
+					bin_status.trash_in_outer_door = trash_size;
+					has_trash = false;
+				:: bin_status.trash_in_outer_door > 0 ->
 					// Cannot deposit trash
 					skip;
 				fi
 			}
 			// Close door
-			bins[bin_id].change_bin!OuterDoor, closed;
-			bins[bin_id].bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
-		:: can_deposit_trash?<user_id, false, bin_id> ->
+			change_bin!OuterDoor, closed;
+			bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
+		:: can_deposit_trash?user_id, false ->
 			skip;
 		fi
 	od
@@ -307,91 +290,76 @@ proctype user(byte user_id) {
 
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
-
 proctype main_control() {
-	byte bin_id;
+	byte bin_id=0
 	byte user_id;
+	bool valid;
 	byte trash_weight;
 
 	do
-	// removes latest element from the channel and assigns to user_id
-	// https://spinroot.com/spin/Man/receive.html 
-	:: scan_card_user?<user_id> ->
+	:: scan_card_user?user_id ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
-		
-		bool valid;
 		check_user!user_id;
 		user_valid?user_id, valid;
-		// Users do not care in which trash bin they deposit their trash. 
-		// After scanning their card, the main_control can assign an available trash bin to the user.
-		if
-		:: valid == true ->
-			// Find an available bin and assign it to bin_id
-			bin_id = 0;
-			bool found_available_bin = false;
-			do
-			:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed -> 
-				found_available_bin	= true;
-				break;
-			:: (bin_id < NO_BINS) -> bin_id++;
-			:: (bin_id >= NO_BINS) -> break;
-			od
-			if
-			:: found_available_bin == true ->
-				can_deposit_trash!user_id, true, bin_id;
-				bins[bin_id].change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it
-			:: else -> 
-				can_deposit_trash!user_id, false, 0; // No trash bin found, therefore cannot deposit trash
-			fi
-		:: else -> 
-			can_deposit_trash!user_id, false, 0; // user is not valid, therefore cannot deposit trash
+		can_deposit_trash!user_id, (valid && !bin_status.full_capacity);
+		if 
+		:: bin_status.full_capacity != true ->
+			change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it 
+		:: else ->
+			skip;
 		fi
-	// removes latest element from the channel and assigns to bin_id
-	// https://spinroot.com/spin/Man/receive.html
-	:: user_closed_outer_door?<bin_id> ->
+	:: user_closed_outer_door?true ->
 		// steps:
 		// the controller should interact with the trash bin such that:
 		// 1. the trash is removed from the outer door
-		bins[bin_id].change_bin!LockOuterDoor, closed;
-		bins[bin_id].bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
+		change_bin!LockOuterDoor, closed;
+		bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
 	
-		// 2. is weighted
-		bins[bin_id].weigh_trash!true;
-		bins[bin_id].trash_weighted?trash_weight; 
+		// 2. is weighted 
+		weigh_trash!true;
+		trash_weighted?trash_weight; 
 		if
-		:: bins[bin_id].full_capacity == true ->
+		:: bin_status.full_capacity == true ->
 			// TODO: 
 			// Should something happen if trash bin is full, and the current trash is in the trap door level?
 			// Cannot deposit trash
 			skip;
 		:: else ->
 			// 3. and then falls into the main chamber.
-			bins[bin_id].change_bin!TrapDoor, open;
-			bins[bin_id].bin_changed?TrapDoor, true; // Hold until (Trapdoor is ack as open)
+			change_bin!TrapDoor, open;
+			bin_changed?TrapDoor, true; // Hold until (Trapdoor is ack as open)
 
-			bins[bin_id].change_ram!compress;
-			bins[bin_id].ram_changed?true; // Hold until (Ram is ack as compressing)
+			change_ram!compress;
+			ram_changed?true; // Hold until (Ram is ack as compressing)
 
 			if 
-			:: bins[bin_id].trash_compressed >= max_capacity -> 
-				bins[bin_id].full_capacity = true;
-				request_truck!bin_id;
+			:: bin_status.trash_compressed >= max_capacity -> 
+				bin_status.full_capacity = true;
 			:: else -> 
 				skip;
 			fi
 		fi
 
-		bins[bin_id].change_ram!idle;
-		bins[bin_id].ram_changed?true; // Hold until (Ram is ack as idle)
+		change_ram!idle;
+		ram_changed?true; // Hold until (Ram is ack as idle)
 
-		bins[bin_id].change_bin!TrapDoor, closed;
-		bins[bin_id].bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
-	// While waiting for the trash truck to arrive and empty the bin, users should still be
-	// able to scan their card—and then be informed that trash deposit is not possible.
-	:: change_truck?arrived, true ->
-		change_truck!start_emptying, true;
-		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
+		change_bin!TrapDoor, closed;
+		bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
+	// truck request emptying of the trash bin if the trash bin is full. 
+	:: bin_status.full_capacity ->
+		request_truck!bin_id;
+		// change_truck?arrived, true; // Hold until (Truck is ack as arrived)
+
+		// While waiting for the trash truck to arrive and empty the bin, users should still be
+		// able to scan their card—and then be informed that trash deposit is not possible.
+		if
+		:: change_truck?arrived, true ->
+			change_truck!start_emptying, true;
+			change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
+		:: change_truck?arrived, false -> // user can still scan their card and then be informed that trash deposit is not possible.
+			skip;
+		fi
 	od
 }
 
@@ -407,16 +375,16 @@ init {
 		do
 		:: proc < NO_BINS ->
 			// Status of trash bin
-			bins[proc].out_door = closed;
-			bins[proc].lock_out_door = closed;
-			bins[proc].trap_door = closed;
-			bins[proc].ram = idle;
-			bins[proc].trash_in_outer_door = 0;
-			bins[proc].trash_on_trap_door = 0;
-			bins[proc].trash_compressed = 0;
-			bins[proc].trash_uncompressed = 0;
-			bins[proc].full_capacity = false;
-			bins[proc].trap_destroyed = false;
+			bin_status.out_door = closed;
+			bin_status.lock_out_door = closed;
+			bin_status.trap_door = closed;
+			bin_status.ram = idle;
+			bin_status.trash_in_outer_door = 0;
+			bin_status.trash_on_trap_door = 0;
+			bin_status.trash_compressed = 0;
+			bin_status.trash_uncompressed = 0;
+			bin_status.full_capacity = false;
+			bin_status.trap_destroyed = false;
 			max_capacity = 2;
 			run bin(proc);
 			proc++;
@@ -424,19 +392,11 @@ init {
 			break;
 		od;
 
-		// Start user processes
+		// Start the user process
 		proc = 0;
-		do
-		:: proc < NO_USERS ->			
-			users[proc].user_id = proc;
-			users[proc].valid = true;
-			users[proc].has_trash = true;
-			users[proc].trash_size = 2;
-			run user(proc);
-			proc++;
-		:: proc == NO_USERS ->
-			break;
-		od;
+		byte trash_size = 2;
+		has_trash = true;
+		run user(proc, trash_size);
 
 		// Start the server process
 		run server();
