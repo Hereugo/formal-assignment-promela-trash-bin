@@ -1,0 +1,9 @@
+never ram1 {    /* !([] ((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2))))) */
+T0_init:
+	do
+	:: atomic { (! (((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2)))))) -> assert(!(! (((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2))))))) }
+	:: (1) -> goto T0_init
+	od;
+accept_all:
+	skip
+}

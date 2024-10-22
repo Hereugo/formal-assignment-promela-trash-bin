@@ -20,8 +20,28 @@
 
 // FORMULAS
 // Insert the LTL formulas here
-// ltl door1 { ¬(bin_t.out_door == open && bin_t.trash_in_outer_door > 0) }
+// ram1 The vertical ram is only used when the outer door is closed and locked
+#define p1 (bin_status.ram == compress)
+#define q1 (bin_status.out_door == closed)
+#define r1 (bin_status.lock_out_door == closed)
+ltl ram1 { [](p1 -> (q1 && r1))}
 
+// ram2 The vertical ram is not used when the interior of the trash bin is empty.
+#define p2 (bin_status.ram == compress)
+#define q2 (bin_status.trash_compressed == 0)
+ltl ram2 { []!(p2 && q2)}
+
+// door1 The outer door can only be opened if no trash is in it. - SAFETY
+#define p3 bin_status.out_door == closed
+#define q3 bin_status.trash_in_outer_door > 0
+ltl door1 { []((p3 && q3) -> (p3 U !q3)) }
+
+// door2 The outer door can only be locked if the trap door is closed and no
+// trash is on the trap door
+#define p4 (bin_status.lock_out_door == locked)
+#define q4 (bin_status.trap_door == closed)
+#define r4 (bin_status.trash_on_trap_door == 0)
+ltl door2 { [](!p1 -> (p1 -> (q1 && r1)))}
 
 // DATATYPES
 // Type for components
