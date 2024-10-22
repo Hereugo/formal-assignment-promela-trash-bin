@@ -14,7 +14,7 @@
 
 // CONSTANTS
 // The number of trash bins.
-#define NO_BINS 1
+#define NO_BINS 2
 // The number of users.
 #define NO_USERS 2
 
@@ -241,10 +241,10 @@ proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?<bin_id> ->
-		printf("TRUCK WAS REQUESTED TO BIN: %d\n", bin_id);
+		// printf("TRUCK WAS REQUESTED TO BIN: %d\n", bin_id);
 		// announce its arrival with the message arrived via the channel "change_truck"
-		printf("CHANGE TRUCK STATUS TO ARRIVED \n");
-		printf("TRUCK REQUEST SIZE: %d \n", len(request_truck));
+		// printf("CHANGE TRUCK STATUS TO ARRIVED \n");
+		// printf("TRUCK REQUEST SIZE: %d \n", len(request_truck));
 		change_truck!arrived, true;
 		
 		change_truck?start_emptying, true;
@@ -254,25 +254,25 @@ proctype truck() {
 		// https://spinroot.com/spin/Man/nempty.html
 		assert(nempty(request_truck));
 
-		printf("PREV TRUCK REQUEST SIZE: %d \n", len(request_truck));
+		// printf("PREV TRUCK REQUEST SIZE: %d \n", len(request_truck));
 
 		// removes latest element from the channel and assigns to bin_id
 		request_truck?bin_id;
 
-		printf("CURR TRUCK REQUEST SIZE: %d \n", len(request_truck));
+		// printf("CURR TRUCK REQUEST SIZE: %d \n", len(request_truck));
 
-		printf("TRUCK STARTS EMPTING BIN: %d \n", bin_id);
+		// printf("TRUCK STARTS EMPTING BIN: %d \n", bin_id);
 
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
 		bins[bin_id].empty_bin!true;
 		bins[bin_id].bin_emptied?true; // Hold until (Bin is ack as empty)
 	
-		printf("BIN %d WAS EMPTIED \n", bin_id);
+		// printf("BIN %d WAS EMPTIED \n", bin_id);
 
 		// communicates this with the main controller via the message "emptied"
 		change_truck!emptied, true;
-		printf("TRUCK STUTUS IS NOW EMPTIED\n");
+		// printf("TRUCK STUTUS IS NOW EMPTIED\n");
 	od
 }
 
@@ -391,7 +391,7 @@ proctype main_control() {
 
 			if 
 			:: bins[bin_id].trash_compressed >= max_capacity -> 
-				printf("REQUESTING TRUCK TO BIN: %d\n", bin_id);
+				// printf("REQUESTING TRUCK TO BIN: %d\n", bin_id);
 				bins[bin_id].full_capacity = true;
 				request_truck!bin_id;
 			:: else -> 
@@ -409,10 +409,10 @@ proctype main_control() {
 	// While waiting for the trash truck to arrive and empty the bin, users should still be
 	// able to scan their card—and then be informed that trash deposit is not possible.
 	:: change_truck?arrived, true ->
-		printf("TRUCK HAS ARRIVED AND WILL START EMPTING \n");
+		// printf("TRUCK HAS ARRIVED AND WILL START EMPTING \n");
 		change_truck!start_emptying, true;
 		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
-		printf("TRUCK HAS EMPTIED THE BIN\n");
+		// printf("TRUCK HAS EMPTIED THE BIN\n");
 	od
 }
 

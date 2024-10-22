@@ -85,6 +85,7 @@ typedef bin_t {
 	// Exceptional behavior
 	bool full_capacity;
 	bool trap_destroyed;
+	bool busy;
 }
 
 
@@ -141,7 +142,6 @@ proctype bin(byte bin_id) {
 		if
 		:: bin_status.out_door == open ->
 			bin_status.out_door = closed;
-			printf("ASDASDASDASD");
 			user_closed_outer_door!true; // send to main control to begin trash disposal process
 			bin_changed!OuterDoor, true;
 		fi
@@ -278,7 +278,12 @@ proctype truck() {
 		
 		change_truck?start_emptying, true;
 
-		assert(nempty(request_truck))
+		// technically the channel request_truck always contains at least one trash bin
+		// since main_control called start_emptying.
+		// https://spinroot.com/spin/Man/nempty.html
+		assert(nempty(request_truck));
+
+		// removes latest element from the channel and assigns to bin_id
 		request_truck?bin_id;
 
 		// empty the trash bin
@@ -347,7 +352,8 @@ proctype main_control() {
 		if 
 		:: valid == true ->
 			if
-			:: (!bin_status.full_capacity && !bin_status.trap_destroyed) ->
+			:: (!bin_status.full_capacity && !bin_status.trap_destroyed && !bin_status.busy) ->
+				bin_status.busy = true;
 				can_deposit_trash!user_id, true;
 				change_bin!LockOuterDoor, open;
 			:: else -> 
@@ -357,7 +363,6 @@ proctype main_control() {
 			can_deposit_trash!user_id, false;
 		fi
 	:: user_closed_outer_door?true ->
-		printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
 		// steps:
 		// the controller should interact with the trash bin such that:
 		// 1. the trash is removed from the outer door
@@ -395,11 +400,13 @@ proctype main_control() {
 
 		change_bin!TrapDoor, closed;
 		bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
+
+		bin_status.busy = false;
 	// While waiting for the trash truck to arrive and empty the bin, users should still be
 	// able to scan their card—and then be informed that trash deposit is not possible.
 	:: change_truck?arrived, true ->
 		change_truck!start_emptying, true;
-		// change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
+		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
 	od
 }
 
@@ -425,7 +432,9 @@ init {
 			bin_status.trash_uncompressed = 0;
 			bin_status.full_capacity = false;
 			bin_status.trap_destroyed = false;
+			bin_status.busy=false;
 			max_capacity = 2;
+			
 			run bin(proc);
 			proc++;
 		:: proc == NO_BINS ->
