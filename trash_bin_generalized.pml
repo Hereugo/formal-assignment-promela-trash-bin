@@ -378,7 +378,6 @@ proctype main_control() {
 
 			if 
 			:: bins[bin_id].trash_compressed >= max_capacity -> 
-				// printf("REQUESTING TRUCK TO BIN: %d\n", bin_id);
 				bins[bin_id].full_capacity = true;
 				request_truck!bin_id;
 			:: else -> 
@@ -396,10 +395,8 @@ proctype main_control() {
 	// While waiting for the trash truck to arrive and empty the bin, users should still be
 	// able to scan their card—and then be informed that trash deposit is not possible.
 	:: change_truck?arrived, true ->
-		// printf("TRUCK HAS ARRIVED AND WILL START EMPTING \n");
 		change_truck!start_emptying, true;
 		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
-		// printf("TRUCK HAS EMPTIED THE BIN\n");
 	od
 }
 
