@@ -1,32 +1,8 @@
-never ram1 {    /* !([] ((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2))))) */
+never door2 {    /* !([] ((! ((bin_status.lock_out_door==2))) || (((bin_status.trap_door==2)) && ((bin_status.trash_on_trap_door==0))))) */
 T0_init:
 	do
-	:: atomic { (! (((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2)))))) -> assert(!(! (((! ((bin_status.ram==1))) || (((bin_status.out_door==2)) && ((bin_status.lock_out_door==2))))))) }
+	:: atomic { (! (((! ((bin_status.lock_out_door==2))) || (((bin_status.trap_door==2)) && ((bin_status.trash_on_trap_door==0)))))) -> assert(!(! (((! ((bin_status.lock_out_door==2))) || (((bin_status.trap_door==2)) && ((bin_status.trash_on_trap_door==0))))))) }
 	:: (1) -> goto T0_init
-	od;
-accept_all:
-	skip
-}
-never ram2 {    /* !([] (! (((bin_status.ram==1)) && ((bin_status.trash_compressed==0))))) */
-T0_init:
-	do
-	:: atomic { (! ((! (((bin_status.ram==1)) && ((bin_status.trash_compressed==0)))))) -> assert(!(! ((! (((bin_status.ram==1)) && ((bin_status.trash_compressed==0))))))) }
-	:: (1) -> goto T0_init
-	od;
-accept_all:
-	skip
-}
-never door1 {    /* !([] ((! (((bin_status.out_door==2)) && ((bin_status.trash_in_outer_door>0)))) || (((bin_status.out_door==2)) U ((!(bin_status.trash_in_outer_door)>0))))) */
-T0_init:
-	do
-	:: (! ((! (((bin_status.out_door==2)) && ((bin_status.trash_in_outer_door>0))))) && ! (((!(bin_status.trash_in_outer_door)>0)))) -> goto accept_S4
-	:: atomic { (! ((! (((bin_status.out_door==2)) && ((bin_status.trash_in_outer_door>0))))) && ! (((!(bin_status.trash_in_outer_door)>0))) && ! (((bin_status.out_door==2)))) -> assert(!(! ((! (((bin_status.out_door==2)) && ((bin_status.trash_in_outer_door>0))))) && ! (((!(bin_status.trash_in_outer_door)>0))) && ! (((bin_status.out_door==2))))) }
-	:: (1) -> goto T0_init
-	od;
-accept_S4:
-	do
-	:: (! (((!(bin_status.trash_in_outer_door)>0)))) -> goto accept_S4
-	:: atomic { (! (((!(bin_status.trash_in_outer_door)>0))) && ! (((bin_status.out_door==2)))) -> assert(!(! (((!(bin_status.trash_in_outer_door)>0))) && ! (((bin_status.out_door==2))))) }
 	od;
 accept_all:
 	skip
