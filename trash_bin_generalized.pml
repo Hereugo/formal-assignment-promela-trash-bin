@@ -330,7 +330,7 @@ proctype main_control() {
 			do
 			:: (bin_id < NO_BINS) ->
 				if
-				:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed -> 
+				:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed && bins[bin_id].lock_out_door==closed -> 
 					found_available_bin	= true;
 					break;
 				:: else -> bin_id++;
