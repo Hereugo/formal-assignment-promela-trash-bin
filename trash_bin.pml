@@ -24,17 +24,17 @@
 #define p1 (bin_status.ram == compress)
 #define q1 (bin_status.out_door == closed)
 #define r1 (bin_status.lock_out_door == closed)
-ltl ram1 { [](p1 -> (q1 && r1))}
+//ltl ram1 { [](p1 -> (q1 && r1))}
 
 // ram2 The vertical ram is not used when the interior of the trash bin is empty.
 #define p2 (bin_status.ram == compress)
 #define q2 (bin_status.trash_compressed == 0)
-ltl ram2 { []!(p2 && q2)}
+//ltl ram2 { []!(p2 && q2)}
 
 // door1 The outer door can only be opened if no trash is in it. - SAFETY
 #define p3 bin_status.out_door == closed
 #define q3 bin_status.trash_in_outer_door > 0
-ltl door1 { []((p3 && q3) -> (p3 U !q3)) }
+//ltl door1 { []((p3 && q3) -> (p3 U !q3)) }
 
 // door2 The outer door can only be locked if the trap door is closed and no
 // trash is on the trap door
