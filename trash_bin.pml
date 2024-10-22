@@ -41,10 +41,10 @@ ltl door1 { []((p3 && q3) -> (p3 U !q3)) }
 
 // door2 The outer door can only be locked if the trap door is closed and no
 // trash is on the trap door
-#define p4 (bin_changed?[LockOuterDoor, true])
+#define p4 (bin_status.lock_out_door==closed)
 #define q4 (bin_status.trap_door == closed)
 #define r4 (bin_status.trash_on_trap_door == 0)
-ltl door2 { [](p4 -> (q4 && r4))}
+ltl door2 { [](<>([](q4 && r4)) U p4)}
 
 // capacity1 Every time the trash bin is full, it is eventually not full anymore.
 #define p5 (bin_status.full_capacity == true)
