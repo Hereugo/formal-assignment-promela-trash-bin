@@ -242,7 +242,7 @@ proctype truck() {
 	:: request_truck?<bin_id> ->
 		// announce its arrival with the message arrived via the channel "change_truck"
 		change_truck!arrived, true;
-	:: change_truck?start_emptying, true ->
+		change_truck?start_emptying, true
 		// technically the channel request_truck always contains at least one trash bin
 		// since main_control called start_emptying.
 		// https://spinroot.com/spin/Man/nempty.html
@@ -328,10 +328,13 @@ proctype main_control() {
 			bin_id = 0;
 			bool found_available_bin = false;
 			do
-			:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed -> 
-				found_available_bin	= true;
-				break;
-			:: (bin_id < NO_BINS) -> bin_id++;
+			:: (bin_id < NO_BINS) ->
+				if
+				:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed -> 
+					found_available_bin	= true;
+					break;
+				:: else -> bin_id++;
+				fi
 			:: (bin_id >= NO_BINS) -> break;
 			od
 			if
