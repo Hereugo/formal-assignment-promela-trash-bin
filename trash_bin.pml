@@ -19,6 +19,7 @@
 #define NO_USERS 1
 
 #define SINGLE_USER_ID 0
+#define SINGLE_BIN_ID 0
 
 // FORMULAS
 // Insert the LTL formulas here
@@ -60,7 +61,7 @@ ltl user1 { [](<>p6)}
 ltl user2 { [](p7 -> <>q7)}
 
 // truck1 Every time the truck is requested for a trash bin, the truck has eventually emptied the bin.
-
+ltl truck1 {[](request_truck?[SINGLE_BIN_ID] -> <>(bin_status.trash_compressed==0))}
 
 // DATATYPES
 // Type for components
@@ -371,7 +372,7 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
-	byte bin_id = 0;
+	byte bin_id = SINGLE_BIN_ID;
 	byte user_id;
 	byte trash_weight;
 
