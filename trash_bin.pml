@@ -236,12 +236,14 @@ proctype server() {
 proctype truck() {
 	byte bin_id;
 	do
-	:: request_truck?bin_id ->
+	:: request_truck?<bin_id> ->
 		// announce its arrival with the message arrived via the channel "change_truck"
-		change_truck!arrived,true
-	:: change_truck?start_emptying, true ->
+		change_truck!arrived,true;
+		
+		change_truck?start_emptying, true;
+
 		assert(nempty(request_truck))
-		request_truck?<bin_id>;
+		request_truck?bin_id;
 
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
@@ -266,7 +268,7 @@ proctype user(byte user_id; byte trash_size) {
 		// Scan card
 		scan_card_user!user_id;
 		if
-		:: can_deposit_trash?<user_id, true> ->
+		:: can_deposit_trash?user_id, true ->
 			bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
 			change_bin!OuterDoor, open;
@@ -285,7 +287,7 @@ proctype user(byte user_id; byte trash_size) {
 			// Close door
 			change_bin!OuterDoor, closed;
 			bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
-		:: can_deposit_trash?<user_id, false> ->
+		:: can_deposit_trash?user_id, false ->
 			skip;
 		fi
 	od
@@ -300,7 +302,7 @@ proctype main_control() {
 	byte trash_weight;
 
 	do
-	:: scan_card_user?<user_id> ->
+	:: scan_card_user?user_id ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
 		bool valid;
@@ -361,7 +363,7 @@ proctype main_control() {
 	// able to scan their card—and then be informed that trash deposit is not possible.
 	:: change_truck?arrived, true ->
 		change_truck!start_emptying, true;
-		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
+		// change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
 	od
 }
 

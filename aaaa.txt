@@ -1,107 +1,53 @@
-  0:	proc  - (:root:) creates proc  0 (:init:)
-  1:	proc  0 (:init::1) trash_bin.pml:376 (state 1)	[proc = 0]
-  2:	proc  0 (:init::1) trash_bin.pml:398 (state 19)	[.(goto)]
-  3:	proc  0 (:init::1) trash_bin.pml:378 (state 2)	[((proc<1))]
-  4:	proc  0 (:init::1) trash_bin.pml:380 (state 3)	[bin_status.out_door = 2]
-  5:	proc  0 (:init::1) trash_bin.pml:381 (state 4)	[bin_status.lock_out_door = 2]
-  6:	proc  0 (:init::1) trash_bin.pml:382 (state 5)	[bin_status.trap_door = 2]
-  7:	proc  0 (:init::1) trash_bin.pml:383 (state 6)	[bin_status.ram = 2]
-  8:	proc  0 (:init::1) trash_bin.pml:384 (state 7)	[bin_status.trash_in_outer_door = 0]
-  9:	proc  0 (:init::1) trash_bin.pml:385 (state 8)	[bin_status.trash_on_trap_door = 0]
- 10:	proc  0 (:init::1) trash_bin.pml:386 (state 9)	[bin_status.trash_compressed = 0]
- 11:	proc  0 (:init::1) trash_bin.pml:387 (state 10)	[bin_status.trash_uncompressed = 0]
- 12:	proc  0 (:init::1) trash_bin.pml:388 (state 11)	[bin_status.full_capacity = 0]
- 13:	proc  0 (:init::1) trash_bin.pml:389 (state 12)	[bin_status.trap_destroyed = 0]
- 14:	proc  0 (:init::1) trash_bin.pml:390 (state 13)	[max_capacity = 2]
-Starting bin with pid 1
- 15:	proc  0 (:init::1) creates proc  1 (bin)
- 15:	proc  0 (:init::1) trash_bin.pml:391 (state 14)	[(run bin(proc))]
- 16:	proc  0 (:init::1) trash_bin.pml:392 (state 15)	[proc = (proc+1)]
- 17:	proc  0 (:init::1) trash_bin.pml:393 (state 16)	[((proc==1))]
- 18:	proc  0 (:init::1) trash_bin.pml:377 (state 20)	[break]
- 19:	proc  0 (:init::1) trash_bin.pml:398 (state 21)	[proc = 0]
- 20:	proc  0 (:init::1) trash_bin.pml:400 (state 22)	[trash_size = 2]
- 21:	proc  0 (:init::1) trash_bin.pml:400 (state 23)	[has_trash = 1]
-Starting user with pid 2
- 22:	proc  0 (:init::1) creates proc  2 (user)
- 22:	proc  0 (:init::1) trash_bin.pml:401 (state 24)	[(run user(proc,trash_size))]
-Starting server with pid 3
- 23:	proc  0 (:init::1) creates proc  3 (server)
- 23:	proc  0 (:init::1) trash_bin.pml:404 (state 25)	[(run server())]
-Starting truck with pid 4
- 24:	proc  0 (:init::1) creates proc  4 (truck)
- 24:	proc  0 (:init::1) trash_bin.pml:406 (state 26)	[(run truck())]
-Starting main_control with pid 5
- 25:	proc  0 (:init::1) creates proc  5 (main_control)
- 25:	proc  0 (:init::1) trash_bin.pml:409 (state 27)	[(run main_control())]
- 26:	proc  2 (user:1) trash_bin.pml:265 (state 3)	[(has_trash)]
- 27:	proc  2 (user:1) trash_bin.pml:267 (state 4)	[scan_card_user!user_id]
- 28:	proc  5 (main_control:1) trash_bin.pml:303 (state 1)	[scan_card_user?<user_id>]
- 29:	proc  5 (main_control:1) trash_bin.pml:307 (state 2)	[valid = 0]
- 30:	proc  5 (main_control:1) trash_bin.pml:307 (state 3)	[check_user!user_id]
- 30:	proc  3 (server:1) trash_bin.pml:223 (state 1)	[check_user?user_id]
- 31:	proc  3 (server:1) trash_bin.pml:226 (state 2)	[((user_id!=42))]
- 32:	proc  3 (server:1) trash_bin.pml:227 (state 3)	[user_valid!user_id,1]
- 32:	proc  5 (main_control:1) trash_bin.pml:308 (state 4)	[user_valid?user_id,valid]
- 33:	proc  5 (main_control:1) trash_bin.pml:310 (state 5)	[((valid==1))]
- 34:	proc  5 (main_control:1) trash_bin.pml:312 (state 6)	[((!(bin_status.full_capacity)&&!(bin_status.trap_destroyed)))]
- 35:	proc  5 (main_control:1) trash_bin.pml:313 (state 7)	[can_deposit_trash!user_id,1]
- 36:	proc  5 (main_control:1) trash_bin.pml:314 (state 8)	[change_bin!2,1]
- 37:	proc  2 (user:1) trash_bin.pml:269 (state 5)	[can_deposit_trash?<user_id,1>]
- 38:	proc  1 (bin:1) trash_bin.pml:141 (state 33)	[change_bin?2,1]
- 39:	proc  5 (main_control:1) trash_bin.pml:318 (state 12)	[.(goto)]
- 40:	proc  1 (bin:1) trash_bin.pml:143 (state 34)	[(((bin_status.lock_out_door==2)&&(bin_status.out_door==2)))]
- 41:	proc  1 (bin:1) trash_bin.pml:144 (state 35)	[bin_status.lock_out_door = 1]
- 42:	proc  1 (bin:1) trash_bin.pml:145 (state 36)	[bin_changed!2,1]
- 42:	proc  2 (user:1) trash_bin.pml:270 (state 6)	[bin_changed?2,1]
- 43:	proc  2 (user:1) trash_bin.pml:272 (state 7)	[change_bin!3,1]
- 44:	proc  5 (main_control:1) trash_bin.pml:321 (state 16)	[.(goto)]
- 45:	proc  1 (bin:1) trash_bin.pml:112 (state 9)	[change_bin?3,1]
- 46:	proc  1 (bin:1) trash_bin.pml:114 (state 10)	[(((bin_status.out_door==2)&&(bin_status.lock_out_door==1)))]
- 47:	proc  1 (bin:1) trash_bin.pml:115 (state 11)	[bin_status.out_door = 1]
- 48:	proc  5 (main_control:1) trash_bin.pml:366 (state 47)	[.(goto)]
- 49:	proc  5 (main_control:1) trash_bin.pml:303 (state 1)	[scan_card_user?<user_id>]
- 50:	proc  1 (bin:1) trash_bin.pml:116 (state 12)	[bin_changed!3,1]
- 50:	proc  2 (user:1) trash_bin.pml:273 (state 8)	[bin_changed?3,1]
- 51:	proc  2 (user:1) trash_bin.pml:276 (state 9)	[((bin_status.trash_in_outer_door==0))]
- 52:	proc  2 (user:1) trash_bin.pml:278 (state 10)	[bin_status.trash_in_outer_door = trash_size]
- 53:	proc  2 (user:1) trash_bin.pml:279 (state 11)	[has_trash = 0]
- 54:	proc  5 (main_control:1) trash_bin.pml:307 (state 2)	[valid = 0]
- 55:	proc  2 (user:1) trash_bin.pml:286 (state 17)	[change_bin!3,2]
- 56:	proc  5 (main_control:1) trash_bin.pml:307 (state 3)	[check_user!user_id]
- 56:	proc  3 (server:1) trash_bin.pml:223 (state 1)	[check_user?user_id]
- 57:	proc  1 (bin:1) trash_bin.pml:104 (state 1)	[change_bin?3,2]
- 58:	proc  1 (bin:1) trash_bin.pml:106 (state 2)	[((bin_status.out_door==1))]
- 59:	proc  1 (bin:1) trash_bin.pml:107 (state 3)	[bin_status.out_door = 2]
-          ASDASDASDASD 60:	proc  1 (bin:1) trash_bin.pml:108 (state 4)	[printf('ASDASDASDASD')]
- 61:	proc  3 (server:1) trash_bin.pml:226 (state 2)	[((user_id!=42))]
- 62:	proc  3 (server:1) trash_bin.pml:227 (state 3)	[user_valid!user_id,1]
- 62:	proc  5 (main_control:1) trash_bin.pml:308 (state 4)	[user_valid?user_id,valid]
- 63:	proc  5 (main_control:1) trash_bin.pml:310 (state 5)	[((valid==1))]
- 64:	proc  5 (main_control:1) trash_bin.pml:312 (state 6)	[((!(bin_status.full_capacity)&&!(bin_status.trap_destroyed)))]
-      timeout
-#processes: 6
-		bin_status.out_door = closed
-		bin_status.lock_out_door = open
-		bin_status.trap_door = closed
-		bin_status.ram = idle
-		bin_status.trash_in_outer_door = 2
-		bin_status.trash_on_trap_door = 0
-		bin_status.trash_compressed = 0
-		bin_status.trash_uncompressed = 0
-		bin_status.full_capacity = 0
-		bin_status.trap_destroyed = 0
-		max_capacity = 2
-		has_trash = 0
-		queue 5 (change_bin): 
-		queue 2 (scan_card_user): [0]
-		queue 10 (can_deposit_trash): [0,1]
-		queue 9 (request_truck): 
-		queue 1 (change_truck): 
- 64:	proc  5 (main_control:1) trash_bin.pml:313 (state 7)
- 64:	proc  4 (truck:1) trash_bin.pml:238 (state 9)
- 64:	proc  3 (server:1) trash_bin.pml:221 (state 8)
- 64:	proc  2 (user:1) trash_bin.pml:287 (state 18)
- 64:	proc  1 (bin:1) trash_bin.pml:109 (state 5)
- 64:	proc  0 (:init::1) trash_bin.pml:411 (state 29) <valid end state>
-6 processes created
+
+(Spin Version 6.5.2 -- 6 December 2019)
+	+ Partial Order Reduction
+
+Full statespace search for:
+	never claim         	- (none specified)
+	assertion violations	+
+	cycle checks       	- (disabled by -DSAFETY)
+	invalid end states	+
+
+State-vector 208 byte, depth reached 385, errors: 0
+     1441 states, stored
+     1452 states, matched
+     2893 transitions (= stored+matched)
+       98 atomic steps
+hash conflicts:         0 (resolved)
+
+Stats on memory usage (in Megabytes):
+    0.324	equivalent memory usage for states (stored*(State-vector + overhead))
+    0.367	actual memory usage for states
+  128.000	memory used for hash table (-w24)
+    0.534	memory used for DFS stack (-m10000)
+  128.827	total actual memory usage
+
+
+unreached in proctype bin
+	trash_bin.pml:131, state 22, "(1)"
+	trash_bin.pml:135, state 25, "bin_status.trash_uncompressed = (bin_status.trash_uncompressed+bin_status.trash_in_outer_door)"
+	trash_bin.pml:136, state 26, "bin_status.trash_in_outer_door = 0"
+	trash_bin.pml:159, state 49, "bin_status.trap_destroyed = 1"
+	trash_bin.pml:160, state 50, "bin_changed!1,0"
+	trash_bin.pml:173, state 60, "(1)"
+	trash_bin.pml:215, state 99, "-end-"
+	(7 of 99 states)
+unreached in proctype server
+	trash_bin.pml:229, state 5, "user_valid!user_id,0"
+	trash_bin.pml:232, state 11, "-end-"
+	(2 of 11 states)
+unreached in proctype truck
+	trash_bin.pml:256, state 12, "-end-"
+	(1 of 12 states)
+unreached in proctype user
+	trash_bin.pml:284, state 13, "(1)"
+	trash_bin.pml:294, state 26, "-end-"
+	(2 of 26 states)
+unreached in proctype main_control
+	trash_bin.pml:321, state 14, "can_deposit_trash!user_id,0"
+	trash_bin.pml:368, state 48, "-end-"
+	(2 of 48 states)
+unreached in init
+	(0 of 29 states)
+
+pan: elapsed time 0 seconds
