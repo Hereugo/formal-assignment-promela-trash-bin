@@ -41,11 +41,12 @@
 #define p4 (bin_status.lock_out_door == closed)
 #define q4 (bin_status.trap_door == closed)
 #define r4 (bin_status.trash_on_trap_door == 0)
-ltl door2 { [](p4 -> (q4 && r4))}
+// ltl door2 { [](p4 -> (q4 && r4))}
 
 // capacity1 Every time the trash bin is full, it is eventually not full anymore.
 #define p5 (bin_status.full_capacity == true)
-// ltl capacity1 { [](p5 -> <>!p5)}
+ltl capacity1 { [](p5 -> <>!p5)}
+// ltl capacity1 { always (p5 -> eventually (!p5)) }
 
 // user1 The user always eventually has no trash
 #define p6 (has_trash == false)
@@ -100,7 +101,7 @@ byte max_capacity;
 bool has_trash;
 
 // Variable to decide if the card reading is enabled
-bool reader_enabled;
+// bool reader_enabled;
 
 // CHANNELS
 // Asynchronous channel to give command to doors and lock
@@ -179,6 +180,7 @@ proctype bin(byte bin_id) {
 	:: change_bin?LockOuterDoor, open ->
 		if
 		:: bin_status.lock_out_door == closed && bin_status.out_door == closed ->
+			printf(">>>>> IS THIS CALLED?\n")
 			bin_status.lock_out_door = open;
 			bin_changed!LockOuterDoor, true;
 		fi
@@ -259,11 +261,14 @@ proctype server() {
 	do
 	// Check validity of card
 	:: check_user?user_id ->
+		printf(">>>>>>> SERVER CHECK USER %d\n", user_id);
 		if
 		// Do not accept cards from user with id 42
 		:: user_id != 42 ->
+			printf(">>>>>>> VALID USER %d\n", user_id);
 			user_valid!user_id, true;
 		:: user_id == 42 ->
+			printf(">>>>>>> INVALID USER %d\n", user_id);
 			user_valid!user_id, false;
 		fi
 	od
@@ -275,10 +280,13 @@ proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?<bin_id> ->
+		assert(bin_status.full_capacity == true);
+		printf(">>>> TRUCK RECEIVED THAT A BIN %d SHOULD BE EMPTIED\n", bin_id);
 		// announce its arrival with the message arrived via the channel "change_truck"
 		change_truck!arrived,true;
 		
 		change_truck?start_emptying, true;
+		printf(">>>> TRUCK RECEIVED IT SHOULD START EMPTING BIN %d\n", bin_id);
 
 		// technically the channel request_truck always contains at least one trash bin
 		// since main_control called start_emptying.
@@ -286,14 +294,22 @@ proctype truck() {
 		assert(nempty(request_truck));
 
 		// removes latest element from the channel and assigns to bin_id
-		request_truck?bin_id;
+		byte temp_bin_id;
+		request_truck?temp_bin_id;
+
+		assert(temp_bin_id == bin_id);
 
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
+		printf(">>>> START EMPTYING BIN %d CURRENT LEVEL: %d / %d\n", bin_id, bin_status.trash_compressed, max_capacity);
 		empty_bin!true;
 		bin_emptied?true; // Hold until (Bin is ack as empty)
-	
+		printf(">>>> EMPTY BIN %d CURRENT LEVEL: %d / %d\n", bin_id, bin_status.trash_compressed, max_capacity);
+
 		// communicates this with the main controller via the message "emptied"
+		printf(">>>> TRUCK IS NOW EMPTIED\n");
+		// printf("STOPPPED");
+		// assert(false == true);
 		change_truck!emptied, true;
 	od
 }
@@ -309,28 +325,41 @@ proctype user(byte user_id; byte trash_size) {
 	// Try to deposit trash
 	:: has_trash ->
 		// Scan card
+		printf(">>>>> USER %d HAS TRASH SIZE: %d\n", user_id, trash_size);
+		printf(">>>>> USER %d SCANS CARD\n", user_id);
 		scan_card_user!user_id;
 		if
 		:: can_deposit_trash?user_id, true ->
+			printf(">>>>> USER %d IS ALLOWED TO DEPOSIT TRASH\n", user_id);
+			printf(">>>>> BEFORE: WAIT FOR THE BIN TO UNLOCK STATE: %d MUST BE %d\n", bin_status.lock_out_door, open);
 			bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
+			printf(">>>>> AFTER: WAIT FOR THE BIN TO UNLOCK STATE: %d MUST BE %d\n", bin_status.lock_out_door, open);
 			// Open door
+			printf(">>>>> BEFORE OPENING OUTER DOOR STATE: %d MUST BE %d\n", bin_status.out_door, open);
 			change_bin!OuterDoor, open;
 			bin_changed?OuterDoor, true; // Holds until (Outerdoor is ack as open)
+			printf(">>>>> AFTER OPENING OUTER DOOR STATE: %d MUST BE %d\n", bin_status.out_door, open);
 			atomic {
 				if
 				:: bin_status.trash_in_outer_door == 0 ->
+					printf(">>>>> BEFORE TRASH IN OUTER DOOR IS %d MUST BE %d\n", bin_status.trash_in_outer_door, trash_size);
 					// Deposit trash
 					bin_status.trash_in_outer_door = trash_size;
 					has_trash = false;
+					printf(">>>>> AFTER TRASH IN OUTER DOOR IS %d MUST BE %d\n", bin_status.trash_in_outer_door, trash_size);
 				:: bin_status.trash_in_outer_door > 0 ->
+					printf(">>>>> TRASH IN OUTER DOOR IS NOT EMPTY\n");
 					// Cannot deposit trash
 					skip;
 				fi
 			}
 			// Close door
+			printf(">>>>> BEFORE: bin_status.out_door = %d MUST BE %d\n", bin_status.out_door, closed);
 			change_bin!OuterDoor, closed;
 			bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
+			printf(">>>>> AFTER: bin_status.out_door = %d MUST BE %d\n", bin_status.out_door, closed);
 		:: can_deposit_trash?user_id, false ->
+			printf(">>>>> USER IS NOT ALLOWED TO DEPOSIT TRASH\n");
 			skip;
 		fi
 	od
@@ -340,87 +369,123 @@ proctype user(byte user_id; byte trash_size) {
 // DUMMY main control process type.
 // Remodel it to control the trash bin system and handle requests by users!
 proctype main_control() {
-	byte bin_id;
+	byte bin_id = 0;
 	byte user_id;
 	byte trash_weight;
 
 	do
-	:: empty(change_truck) ->
-		if
-		:: scan_card_user?user_id ->
-			
-			// - Check whether the card is valid
-			// - Check whether the trash bin is full and no trash can be deposited.
-			bool valid;
-			check_user!user_id;
-			user_valid?user_id, valid;
-			if 
-			:: valid == true ->
-				if
-				:: (!bin_status.full_capacity && !bin_status.trap_destroyed && !bin_status.busy) ->
-					bin_status.busy = true;
-					can_deposit_trash!user_id, true;
-					change_bin!LockOuterDoor, open;
-				:: else -> 
-					can_deposit_trash!user_id, false;
-					if 
-					:: (bin_status.full_capacity || bin_status.trap_destroyed) -> 
-						reader_enabled = false;
-					fi
-				fi
-			:: else ->
+	:: scan_card_user?user_id ->
+		// - Check whether the card is valid
+		// - Check whether the trash bin is full and no trash can be deposited.
+		bool valid = false;
+		check_user!user_id;
+		user_valid?user_id, valid;
+		printf(">>>>>> MAIN CONTROL USER %d IS %d \n", user_id, valid);
+		if 
+		:: valid == true ->
+			if
+			:: (!bin_status.full_capacity && !bin_status.trap_destroyed && !bin_status.busy) ->
+				printf(">>>>>> MAIN CONTROL SINGLE BIN STATE:\n")
+				printf(">>>>>> full_capacity: %d\n", bin_status.full_capacity);
+				printf(">>>>>> trap_destroyed: %d\n", bin_status.trap_destroyed);
+				printf(">>>>>> busy: %d\n", bin_status.busy);
+				bin_status.busy = true;
+				printf(">>>>> MAIN CONTROL ALLOW USER %d TO DEPOSIT TRASH\n", user_id);
+				can_deposit_trash!user_id, true;
+				printf(">>>>> MAIN CONTROL UNLOCK OUTER DOOR: %d MUST BE %d\n", bin_status.lock_out_door, open);
+				change_bin!LockOuterDoor, open;
+			:: else -> 
+				printf(">>>>> MAIN CONTROL DENY USER %d TO DEPOSIT TRASH\n", user_id);
 				can_deposit_trash!user_id, false;
 			fi
-		:: user_closed_outer_door?true ->
-			// user_closed_outer_door?true
-			// steps:
-			// the controller should interact with the trash bin such that:
-			// 1. the trash is removed from the outer door
-			change_bin!LockOuterDoor, closed;
-			bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
-		
-			// 2. is weighted 
-			weigh_trash!true;
-			trash_weighted?trash_weight; 
-			if
-			:: bin_status.full_capacity == true ->
-				// TODO: 
-				// Should something happen if trash bin is full, and the current trash is in the trap door level?
-				// Cannot deposit trash
-				skip;
-			:: else ->
-				// 3. and then falls into the main chamber.
-				change_bin!TrapDoor, open;
-				bin_changed?TrapDoor, true; // Hold until (Trapdoor is ack as open)
-
-				change_ram!compress;
-				ram_changed?true; // Hold until (Ram is ack as compressing)
-
-				if 
-				:: bin_status.trash_compressed >= max_capacity -> 
-					bin_status.full_capacity = true;
-					request_truck!bin_id;
-				:: else -> 
-					skip;
-				fi
-			fi
-
-			change_ram!idle;
-			ram_changed?true; // Hold until (Ram is ack as idle)
-
-			change_bin!TrapDoor, closed;
-			bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
-
-			bin_status.busy = false;
-		
-		:: empty(scan_card_user) && empty(user_closed_outer_door) ->
-			skip;
+		:: else ->
+			printf(">>>>> MAIN CONTROL DENY USER %d TO DEPOSIT TRASH\n", user_id);
+			can_deposit_trash!user_id, false;
 		fi
 
+		printf(">>>>> MAIN CONTROL CHECK IF TRUCK HAS ARRIVED\n");
+		if
+		:: change_truck?arrived, true ->
+			printf(">>>>> MAIN CONTROL TRUCK HAS ARRIVED\n");
+			printf(">>>>> MAIN CONTROL TRUCK START TO EMPTYING\n");
+			change_truck!start_emptying, true;
+			change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
+			printf(">>>>> MAIN CONTROL TRUCK HAS EMPTIED THE TRASH\n");
+			assert(bin_status.full_capacity == false);
+			assert(bin_status.trash_compressed == 0);
+			assert(bin_status.trash_uncompressed == 0);
+		:: empty(change_truck) -> skip;
+		fi
+	:: user_closed_outer_door?true ->
+		printf(">>>> MAIN CONTROL USER HAS CLOSED THE OUTER DOOR\n");
+		// steps:
+		// the controller should interact with the trash bin such that:
+		// 1. the trash is removed from the outer door
+		printf(">>>> BEFORE MAIN CONTROL LOCK THE OUTER DOOR STATE: %d MUST BE %d\n", bin_status.lock_out_door, closed);
+		change_bin!LockOuterDoor, closed;
+		bin_changed?LockOuterDoor, true; // Hold until (Lock is ack as closed)
+		printf(">>>> AFTER MAIN CONTROL LOCK THE OUTER DOOR STATE: %d MUST BE %d\n", bin_status.lock_out_door, closed);
+	
+		// 2. is weighted
+		printf(">>>> MAIN CONTROL WEIGH TRASH\n");
+		weigh_trash!true;
+		trash_weighted?trash_weight; 
+		printf(">>>> MAIN CONTROL WEIGHED TRASH EQUALS TO %d\n", trash_weight);
+		if
+		:: bin_status.full_capacity == true ->
+			printf(">>>>> MAIN CONTROL THE BIN IS FUCKING FULL\n");
+			// TODO: 
+			// Should something happen if trash bin is full, and the current trash is in the trap door level?
+			// Cannot deposit trash
+			printf(">>>>> MAIN CONTROL JUST IN CASE CALL THE TRUCK ON THE BIN: %d\n", bin_id);
+			request_truck!bin_id;
+		:: else ->
+			printf(">>>>> MAIN CONTROL THE BIN IS NOT YET FULL\n");
+			// 3. and then falls into the main chamber.
+			printf(">>>>> BEFORE MAIN CONTROL OPEN TRAP DOOR STATE: %d MUST BE %d\n", bin_status.trap_door, open);
+			change_bin!TrapDoor, open;
+			bin_changed?TrapDoor, true; // Hold until (Trapdoor is ack as open)
+			printf(">>>>> AFTER MAIN CONTROL OPEN TRAP DOOR STATE: %d MUST BE %d\n", bin_status.trap_door, open);
+
+
+			printf(">>>>> BEFORE MAIN CONTROL COMPRESS RAM STATE: %d MUST BE %d\n", bin_status.ram, compress);
+			change_ram!compress;
+			ram_changed?true; // Hold until (Ram is ack as compressing)
+			printf(">>>>> AFTER MAIN CONTROL COMRPESS RAM STATE: %d MUST BE %d\n", bin_status.ram, compress);
+
+			if 
+			:: bin_status.trash_compressed >= max_capacity -> 
+				printf(">>>>> MAIN CONTROL BIN IS FULL %d\n", bin_id);
+				bin_status.full_capacity = true;
+				printf(">>>>> MAIN CONTROL CALL THE TRUCK ON THE BIN: %d\n", bin_id);
+				request_truck!bin_id;
+			:: else -> 
+				printf(">>>>> MAIN CONTROL AFTER COMPRESS BIN IS NOT REACH MAX CAPACITY %d < %d\n", bin_status.trash_compressed, max_capacity);
+				skip;
+			fi
+		fi
+
+		printf(">>>>> BEFORE MAIN CONTROL IDLE RAM STATE: %d MUST BE %d\n", bin_status.ram, idle);
+		change_ram!idle;
+		ram_changed?true; // Hold until (Ram is ack as idle)
+		printf(">>>>> AFTER MAIN CONTROL IDLE RAM STATE: %d MUST BE %d\n", bin_status.ram, idle);
+
+		printf(">>>>> BEFORE MAIN CONTROL CLOSED TRAP DOOR STATE: %d MUST BE %d\n", bin_status.trap_door, closed);
+		change_bin!TrapDoor, closed;
+		bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
+		printf(">>>>> AFTER MAIN CONTROL CLOSED TRAP DOOR STATE: %d MUST BE %d\n", bin_status.trap_door, closed);
+
+		printf(">>>>> MAIN CONTROL BIN IS NOW NOT BUSY\n");
+		bin_status.busy = false;
 	:: change_truck?arrived, true ->
+		printf(">>>>> MAIN CONTROL TRUCK HAS ARRIVED\n");
+		printf(">>>>> MAIN CONTROL TRUCK START TO EMPTYING\n");
 		change_truck!start_emptying, true;
 		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)
-		reader_enabled = true;
+		printf(">>>>> MAIN CONTROL TRUCK HAS EMPTIED THE TRASH\n");
+		assert(bin_status.full_capacity == false);
+		assert(bin_status.trash_compressed == 0);
+		assert(bin_status.trash_uncompressed == 0);
 	od
 }
 
@@ -467,7 +532,7 @@ init {
 		run truck();
 
 		// Start the control process for the trash bin
-		reader_enabled = true;
+		// reader_enabled = true;
 		run main_control();
 	}
 }
