@@ -16,7 +16,7 @@
 // The number of trash bins.
 #define NO_BINS 1
 // The number of users.
-#define NO_USERS 1
+#define NO_USERS 2
 
 // FORMULAS
 // Insert the LTL formulas here
@@ -47,6 +47,7 @@ typedef bin_t {
 	byte trash_compressed;
 	byte trash_uncompressed;
 	bool full_capacity;
+	bool busy;
 	// Exceptional behavior
 	bool trap_destroyed;
 
@@ -240,24 +241,38 @@ proctype truck() {
 	byte bin_id;
 	do
 	:: request_truck?<bin_id> ->
+		printf("TRUCK WAS REQUESTED TO BIN: %d\n", bin_id);
 		// announce its arrival with the message arrived via the channel "change_truck"
+		printf("CHANGE TRUCK STATUS TO ARRIVED \n");
+		printf("TRUCK REQUEST SIZE: %d \n", len(request_truck));
 		change_truck!arrived, true;
-		change_truck?start_emptying, true
+		
+		change_truck?start_emptying, true;
+
 		// technically the channel request_truck always contains at least one trash bin
 		// since main_control called start_emptying.
 		// https://spinroot.com/spin/Man/nempty.html
 		assert(nempty(request_truck));
 
+		printf("PREV TRUCK REQUEST SIZE: %d \n", len(request_truck));
+
 		// removes latest element from the channel and assigns to bin_id
 		request_truck?bin_id;
+
+		printf("CURR TRUCK REQUEST SIZE: %d \n", len(request_truck));
+
+		printf("TRUCK STARTS EMPTING BIN: %d \n", bin_id);
 
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
 		bins[bin_id].empty_bin!true;
 		bins[bin_id].bin_emptied?true; // Hold until (Bin is ack as empty)
 	
+		printf("BIN %d WAS EMPTIED \n", bin_id);
+
 		// communicates this with the main controller via the message "emptied"
 		change_truck!emptied, true;
+		printf("TRUCK STUTUS IS NOW EMPTIED\n");
 	od
 }
 
@@ -330,7 +345,7 @@ proctype main_control() {
 			do
 			:: (bin_id < NO_BINS) ->
 				if
-				:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed && bins[bin_id].lock_out_door==closed -> 
+				:: !bins[bin_id].full_capacity && !bins[bin_id].trap_destroyed && !bins[bin_id].busy -> 
 					found_available_bin	= true;
 					break;
 				:: else -> bin_id++;
@@ -339,6 +354,7 @@ proctype main_control() {
 			od
 			if
 			:: found_available_bin == true ->
+				bins[bin_id].busy = true;
 				can_deposit_trash!user_id, true, bin_id;
 				bins[bin_id].change_bin!LockOuterDoor, open; // set outer door to be unlocked (i.e.) diff from opening, its just unlocks it
 			:: else -> 
@@ -375,6 +391,7 @@ proctype main_control() {
 
 			if 
 			:: bins[bin_id].trash_compressed >= max_capacity -> 
+				printf("REQUESTING TRUCK TO BIN: %d\n", bin_id);
 				bins[bin_id].full_capacity = true;
 				request_truck!bin_id;
 			:: else -> 
@@ -387,11 +404,15 @@ proctype main_control() {
 
 		bins[bin_id].change_bin!TrapDoor, closed;
 		bins[bin_id].bin_changed?TrapDoor, true; // should be true, as we change the ram to idle beforehand.
+
+		bins[bin_id].busy = false;
 	// While waiting for the trash truck to arrive and empty the bin, users should still be
 	// able to scan their card—and then be informed that trash deposit is not possible.
 	:: change_truck?arrived, true ->
+		printf("TRUCK HAS ARRIVED AND WILL START EMPTING \n");
 		change_truck!start_emptying, true;
 		change_truck?emptied, true; // Hold until (Truck is ack as emptied the bin)		
+		printf("TRUCK HAS EMPTIED THE BIN\n");
 	od
 }
 
@@ -417,6 +438,7 @@ init {
 			bins[proc].trash_uncompressed = 0;
 			bins[proc].full_capacity = false;
 			bins[proc].trap_destroyed = false;
+			bins[proc].busy = false;
 			max_capacity = 2;
 			run bin(proc);
 			proc++;
