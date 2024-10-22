@@ -105,7 +105,8 @@ proctype bin(byte bin_id) {
 		if
 		:: bin_status.out_door == open ->
 			bin_status.out_door = closed;
-			user_closed_outer_door!true; // send to main control to begin trash disposal process (line ~304)
+			printf("ASDASDASDASD");
+			user_closed_outer_door!true; // send to main control to begin trash disposal process
 			bin_changed!OuterDoor, true;
 		fi
 	:: change_bin?OuterDoor, open ->
@@ -318,6 +319,7 @@ proctype main_control() {
 			can_deposit_trash!user_id, false;
 		fi
 	:: user_closed_outer_door?true ->
+		printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
 		// steps:
 		// the controller should interact with the trash bin such that:
 		// 1. the trash is removed from the outer door
@@ -370,7 +372,7 @@ init {
 	atomic {
 		// In the code below, the individual trash bins are initialised.
 		// The assumption here is that N == 1.
-		// When generalising the model for multiple bin, make sure that the do-statement is altered!
+		// When generalising the model for multiple bin, make sure that the do-statement is altered!	
 		proc = 0;
 		do
 		:: proc < NO_BINS ->

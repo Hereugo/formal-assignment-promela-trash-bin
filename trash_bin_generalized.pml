@@ -14,9 +14,9 @@
 
 // CONSTANTS
 // The number of trash bins.
-#define NO_BINS 3
+#define NO_BINS 1
 // The number of users.
-#define NO_USERS 3
+#define NO_USERS 1
 
 // FORMULAS
 // Insert the LTL formulas here
@@ -239,9 +239,9 @@ proctype server() {
 proctype truck() {
 	byte bin_id;
 	do
-	:: request_truck?bin_id ->
+	:: request_truck?<bin_id> ->
 		// announce its arrival with the message arrived via the channel "change_truck"
-		change_truck!arrived, true
+		change_truck!arrived, true;
 	:: change_truck?start_emptying, true ->
 		// technically the channel request_truck always contains at least one trash bin
 		// since main_control called start_emptying.
@@ -249,8 +249,7 @@ proctype truck() {
 		assert(nempty(request_truck));
 
 		// removes latest element from the channel and assigns to bin_id
-		// https://spinroot.com/spin/Man/receive.html
-		request_truck?<bin_id>;
+		request_truck?bin_id;
 
 		// empty the trash bin
 		// communicates with the trash bin via the channels "empty_bin" and "bin_emptied"
@@ -277,7 +276,7 @@ proctype user(byte user_id) {
 		if
 		// extended the messages delivered via the channel 
 		// can_deposit_trash to indicate the bin_id where users should deposit the trash.
-		:: can_deposit_trash?<user_id, true, bin_id> ->
+		:: can_deposit_trash?user_id, true, bin_id ->
 			bins[bin_id].bin_changed?LockOuterDoor, true; // Holds until (Lock is ack as open)
 			// Open door
 			bins[bin_id].change_bin!OuterDoor, open;
@@ -296,7 +295,7 @@ proctype user(byte user_id) {
 			// Close door
 			bins[bin_id].change_bin!OuterDoor, closed;
 			bins[bin_id].bin_changed?OuterDoor, true; // Hold until (Outerdoor is ack as closed)
-		:: can_deposit_trash?<user_id, false, bin_id> ->
+		:: can_deposit_trash?user_id, false, bin_id ->
 			skip;
 		fi
 	od
@@ -314,7 +313,7 @@ proctype main_control() {
 	do
 	// removes latest element from the channel and assigns to user_id
 	// https://spinroot.com/spin/Man/receive.html 
-	:: scan_card_user?<user_id> ->
+	:: scan_card_user?user_id ->
 		// - Check whether the card is valid
 		// - Check whether the trash bin is full and no trash can be deposited.
 		
@@ -347,7 +346,7 @@ proctype main_control() {
 		fi
 	// removes latest element from the channel and assigns to bin_id
 	// https://spinroot.com/spin/Man/receive.html
-	:: user_closed_outer_door?<bin_id> ->
+	:: user_closed_outer_door?bin_id ->
 		// steps:
 		// the controller should interact with the trash bin such that:
 		// 1. the trash is removed from the outer door
