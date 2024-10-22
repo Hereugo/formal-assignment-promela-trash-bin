@@ -41,7 +41,23 @@ ltl door1 { []((p3 && q3) -> (p3 U !q3)) }
 #define p4 (bin_status.lock_out_door == locked)
 #define q4 (bin_status.trap_door == closed)
 #define r4 (bin_status.trash_on_trap_door == 0)
-ltl door2 { [](!p1 -> (p1 -> (q1 && r1)))}
+//ltl door2 { [](!p1 -> (p1 -> (q1 && r1)))}
+
+// capacity1 Every time the trash bin is full, it is eventually not full anymore.
+#define p5 (bin_status.full_capacity == true)
+//ltl capacity1 { [](p5 -> <>!p5)}
+
+// user1 The user always eventually has no trash
+#define p6 (has_trash == false)
+//ltl user { [](<>p6)}
+
+// user2 Every time the user has trash they can deposit their trash.
+#define p7 (has_trash == true)
+#define q7 (can_deposit_trash == true)
+//ltl user { [](p6 -> <>q6)}
+
+// truck1 Every time the truck is requested for a trash bin, the truck has eventually emptied the bin.
+
 
 // DATATYPES
 // Type for components
